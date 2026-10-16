@@ -46,6 +46,7 @@ import {
 } from "@/server/lib/dataforseo/google-ads";
 import {
   fetchLiveSerp,
+  fetchLiveAutocomplete,
   fetchLocalSerp,
   fetchRankCheckSerp,
   postLocalSerpTasks,
@@ -206,6 +207,11 @@ export function createDataforseoClient(customer: BillingCustomerContext) {
       ),
     },
     serp: {
+      autocomplete: meter(
+        customer,
+        fetchLiveAutocomplete,
+        dataforseoPricing.serp.autocomplete,
+      ),
       live: meter(customer, fetchLiveSerp, dataforseoPricing.serp.live),
       // A rank check batch shares one credit hold and one settle across its
       // live calls (see meterDataforseoCalls). Resolves per call, in order.

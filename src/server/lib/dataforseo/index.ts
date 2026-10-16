@@ -18,7 +18,10 @@ export {
   type LlmPlatform,
 } from "@/server/lib/dataforseo/shared";
 
-export { SERP_ANALYSIS_DEPTH } from "@/server/lib/dataforseo/serp";
+export {
+  SERP_ANALYSIS_DEPTH,
+  fetchLiveAutocomplete,
+} from "@/server/lib/dataforseo/serp";
 
 export { normalizeBacklinksTarget } from "@/server/lib/dataforseoBacklinksTarget";
 
@@ -53,6 +56,7 @@ export type { AdsKeywordIdeaItem } from "@/server/lib/dataforseo/google-ads";
 export type {
   LocalSerpTaskOutcome,
   SerpLiveItem,
+  AutocompleteItem,
   RankCheckResult,
   RankCheckTaskInput,
   PostedRankCheckTask,

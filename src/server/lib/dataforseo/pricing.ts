@@ -29,6 +29,7 @@ import {
 } from "@/server/lib/dataforseo/google-ads";
 import {
   clampSerpDepth,
+  fetchLiveAutocomplete,
   fetchLiveSerp,
   fetchLocalSerp,
   fetchRankCheckSerp,
@@ -252,6 +253,7 @@ export const dataforseoPricing = {
     relevantPages: priced(fetchRelevantPages, (input) => labsUsd(input.limit)),
   },
   serp: {
+    autocomplete: priced(fetchLiveAutocomplete, () => 0.002),
     live: priced(fetchLiveSerp, (input) =>
       serpUsd(
         clampSerpDepth(input.depth ?? SERP_ANALYSIS_DEPTH),

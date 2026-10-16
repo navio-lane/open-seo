@@ -86,6 +86,46 @@ const serpSnapshotItemSchema = z
 
 export type SerpLiveItem = z.infer<typeof serpSnapshotItemSchema>;
 
+const autocompleteItemSchema = z
+  .object({
+    type: z.string(),
+    rank_group: z.number().nullable().optional(),
+    suggestion: z.string().nullable().optional(),
+    relevance: z.number().nullable().optional(),
+    search_query_url: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+export type AutocompleteItem = z.infer<typeof autocompleteItemSchema>;
+
+export async function fetchLiveAutocomplete(input: {
+  keyword: string;
+  locationCode: number;
+  languageCode: string;
+  client?: string;
+}): Promise<DataforseoApiResponse<AutocompleteItem[]>> {
+  const response = await dataforseoPost(
+    "/v3/serp/google/autocomplete/live/advanced",
+    [
+      {
+        keyword: input.keyword,
+        location_code: input.locationCode,
+        language_code: input.languageCode,
+        client: input.client ?? "gws-wiz-serp",
+      },
+    ],
+  );
+  const task = assertOk(response, { treatNoResultsAsEmpty: true });
+  return {
+    data: parseTaskItems(
+      "google-autocomplete-live-advanced",
+      task,
+      autocompleteItemSchema,
+    ),
+    billing: buildTaskBilling(task),
+  };
+}
+
 export async function fetchLiveSerp(input: {
   keyword: string;
   locationCode: number;
