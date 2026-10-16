@@ -7,6 +7,10 @@ import {
   seoCollectSerpSchema,
   seoSavedSerpSchema,
   seoSerpEstimateSchema,
+  seoPollSerpSchema,
+  seoMatchPresetSaveSchema,
+  seoOpportunityReportSchema,
+  seoCancelJobSchema,
 } from "@/types/schemas/seo-intelligence";
 
 export const getSeoResearchSettings = createServerFn({ method: "POST" })
@@ -66,4 +70,62 @@ export const getSavedSeoSerp = createServerFn({ method: "POST" })
   .validator(seoSavedSerpSchema)
   .handler(({ data, context }) =>
     SeoIntelligenceService.getSerp(context.projectId, data.keywordId),
+  );
+
+export const pollSeoSerp = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(seoPollSerpSchema)
+  .handler(({ data, context }) =>
+    SeoIntelligenceService.pollSerp(
+      { ...data, projectId: context.projectId },
+      context,
+    ),
+  );
+
+export const listQueuedSeoSerpJobs = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .handler(({ context }) =>
+    SeoIntelligenceService.listQueuedSerpJobs(context.projectId, context),
+  );
+
+export const listSeoApiJobs = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .handler(({ context }) =>
+    SeoIntelligenceService.listApiJobs(context.projectId, context),
+  );
+
+export const listSeoMatchPresets = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .handler(({ context }) =>
+    SeoIntelligenceService.listMatchPresets(context.projectId),
+  );
+
+export const saveSeoMatchPreset = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(seoMatchPresetSaveSchema)
+  .handler(({ data, context }) =>
+    SeoIntelligenceService.saveMatchPreset({
+      ...data,
+      projectId: context.projectId,
+    }),
+  );
+
+export const getSeoOpportunityReport = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(seoOpportunityReportSchema)
+  .handler(({ data, context }) =>
+    SeoIntelligenceService.getOpportunityReport({
+      ...data,
+      projectId: context.projectId,
+    }),
+  );
+
+export const cancelSeoPaidJob = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(seoCancelJobSchema)
+  .handler(({ data, context }) =>
+    SeoIntelligenceService.cancelPendingJob(
+      { ...data, projectId: context.projectId },
+      context,
+    ),
   );

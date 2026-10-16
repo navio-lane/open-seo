@@ -136,7 +136,12 @@ export function getProjectNavGroups(projectId: string) {
         byPath("/p/$projectId/keywords"),
         byPath("/p/$projectId/seo-intelligence"),
         byPath("/p/$projectId/domain"),
-        byPath("/p/$projectId/backlinks"),
+      ],
+    },
+    {
+      label: "Backlink Explorer",
+      items: [
+        { ...byPath("/p/$projectId/backlinks"), label: "Backlink Explorer" },
       ],
     },
     {

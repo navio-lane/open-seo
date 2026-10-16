@@ -1,18 +1,169 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   seoApiJobs,
   seoKeywordSources,
   seoKeywords,
+  seoMatchPresets,
   seoOrganicResults,
+  seoOpportunityAssessments,
   seoSeeds,
   seoSerpSnapshots,
 } from "@/db/schema";
+import {
+  FLEXIBLE_MATCH_RULES,
+  STRICT_MATCH_RULES,
+  type MatchRules,
+} from "./matching";
 
 export type SeoKeyword = typeof seoKeywords.$inferSelect;
+type MatchPreset = typeof seoMatchPresets.$inferSelect;
+
+function serializePreset(preset: MatchPreset) {
+  return {
+    ...preset,
+    rules: {
+      titleIgnoredWords: JSON.parse(preset.titleIgnoredWords) as string[],
+      urlIgnoredWords: JSON.parse(preset.urlIgnoredWords) as string[],
+      preserveOrder: preset.preserveOrder,
+      adjacentPhrase: preset.adjacentPhrase,
+      urlPathOnly: preset.urlPathOnly,
+      ampersandEqualsAnd: preset.ampersandEqualsAnd,
+    } satisfies MatchRules,
+  };
+}
+
+async function ensureMatchPresets(projectId: string) {
+  const current = await db
+    .select()
+    .from(seoMatchPresets)
+    .where(eq(seoMatchPresets.projectId, projectId));
+  const add = async (name: string, rules: MatchRules, isDefault: boolean) => {
+    await db
+      .insert(seoMatchPresets)
+      .values({
+        id: crypto.randomUUID(),
+        projectId,
+        name,
+        titleIgnoredWords: JSON.stringify(rules.titleIgnoredWords),
+        urlIgnoredWords: JSON.stringify(rules.urlIgnoredWords),
+        preserveOrder: rules.preserveOrder,
+        adjacentPhrase: rules.adjacentPhrase,
+        urlPathOnly: rules.urlPathOnly,
+        ampersandEqualsAnd: rules.ampersandEqualsAnd,
+        isDefault,
+      })
+      .onConflictDoNothing();
+  };
+  if (!current.some((preset) => preset.isDefault))
+    await add("Flexible", FLEXIBLE_MATCH_RULES, true);
+  if (!current.some((preset) => preset.name === "Strict"))
+    await add("Strict", STRICT_MATCH_RULES, false);
+  const rows = await db
+    .select()
+    .from(seoMatchPresets)
+    .where(eq(seoMatchPresets.projectId, projectId))
+    .orderBy(asc(seoMatchPresets.createdAt));
+  return rows.map(serializePreset);
+}
+
+async function saveMatchPreset(input: {
+  projectId: string;
+  id?: string;
+  name: string;
+  rules: MatchRules;
+  isDefault: boolean;
+}) {
+  const id = input.id ?? crypto.randomUUID();
+  const values = {
+    name: input.name.trim(),
+    titleIgnoredWords: JSON.stringify(input.rules.titleIgnoredWords),
+    urlIgnoredWords: JSON.stringify(input.rules.urlIgnoredWords),
+    preserveOrder: input.rules.preserveOrder,
+    adjacentPhrase: input.rules.adjacentPhrase,
+    urlPathOnly: input.rules.urlPathOnly,
+    ampersandEqualsAnd: input.rules.ampersandEqualsAnd,
+    isDefault: input.isDefault,
+    version: sql`${seoMatchPresets.version} + 1`,
+  };
+  const existing = input.id
+    ? await db
+        .select({ id: seoMatchPresets.id })
+        .from(seoMatchPresets)
+        .where(
+          and(
+            eq(seoMatchPresets.id, input.id),
+            eq(seoMatchPresets.projectId, input.projectId),
+          ),
+        )
+        .limit(1)
+    : [];
+  if (existing.length) {
+    await db
+      .update(seoMatchPresets)
+      .set(values)
+      .where(
+        and(
+          eq(seoMatchPresets.id, id),
+          eq(seoMatchPresets.projectId, input.projectId),
+        ),
+      );
+  } else {
+    const { version: _version, ...createValues } = values;
+    await db
+      .insert(seoMatchPresets)
+      .values({ id, projectId: input.projectId, ...createValues });
+  }
+  if (input.isDefault) {
+    await db
+      .update(seoMatchPresets)
+      .set({ isDefault: false })
+      .where(eq(seoMatchPresets.projectId, input.projectId));
+    await db
+      .update(seoMatchPresets)
+      .set({ isDefault: true })
+      .where(
+        and(
+          eq(seoMatchPresets.projectId, input.projectId),
+          eq(seoMatchPresets.id, id),
+        ),
+      );
+  }
+  return getMatchPreset(input.projectId, id);
+}
+
+async function getMatchPreset(projectId: string, id: string) {
+  const [preset] = await db
+    .select()
+    .from(seoMatchPresets)
+    .where(
+      and(eq(seoMatchPresets.projectId, projectId), eq(seoMatchPresets.id, id)),
+    )
+    .limit(1);
+  return preset ? serializePreset(preset) : null;
+}
+
+async function saveOpportunityAssessment(input: {
+  snapshotId: string;
+  presetId: string;
+  presetVersion: number;
+  status: string;
+  bothCount: number;
+  titleOnlyCount: number;
+  urlOnlyCount: number;
+  neitherCount: number;
+}) {
+  const id = crypto.randomUUID();
+  await db.insert(seoOpportunityAssessments).values({ id, ...input });
+  return { id, ...input };
+}
 
 function normalize(value: string) {
-  return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  return value
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
 }
 
 async function ensureSeed(input: {
@@ -161,14 +312,14 @@ async function listSuggestionsForSeed(input: {
       ),
     )
     .limit(1);
-  if (!savedSeed) return [];
+  if (!savedSeed) return { seedExists: false, suggestions: [] };
   const rows = await db
     .select({ id: seoKeywords.id, keyword: seoKeywords.keyword })
     .from(seoKeywordSources)
     .innerJoin(seoKeywords, eq(seoKeywords.id, seoKeywordSources.keywordId))
     .where(eq(seoKeywordSources.seedId, savedSeed.id))
     .orderBy(asc(seoKeywords.keyword));
-  return rows;
+  return { seedExists: true, suggestions: rows };
 }
 
 async function createApiJob(input: {
@@ -199,6 +350,57 @@ async function getApiJob(id: string, projectId: string, userId: string) {
   return job ?? null;
 }
 
+async function listQueuedSerpJobs(projectId: string, userId: string) {
+  return db
+    .select({ id: seoApiJobs.id })
+    .from(seoApiJobs)
+    .where(
+      and(
+        eq(seoApiJobs.projectId, projectId),
+        eq(seoApiJobs.userId, userId),
+        eq(seoApiJobs.endpoint, "Google Organic SERP"),
+        eq(seoApiJobs.status, "queued"),
+      ),
+    );
+}
+
+async function listApiJobs(projectId: string, userId: string) {
+  return db
+    .select({
+      id: seoApiJobs.id,
+      endpoint: seoApiJobs.endpoint,
+      mode: seoApiJobs.mode,
+      requestCount: seoApiJobs.requestCount,
+      estimateUsd: seoApiJobs.estimateUsd,
+      actualUsd: seoApiJobs.actualUsd,
+      status: seoApiJobs.status,
+      error: seoApiJobs.error,
+      createdAt: seoApiJobs.createdAt,
+    })
+    .from(seoApiJobs)
+    .where(
+      and(eq(seoApiJobs.projectId, projectId), eq(seoApiJobs.userId, userId)),
+    )
+    .orderBy(desc(seoApiJobs.createdAt))
+    .limit(50);
+}
+
+async function cancelPendingJob(id: string, projectId: string, userId: string) {
+  const rows = await db
+    .update(seoApiJobs)
+    .set({ status: "cancelled", completedAt: new Date().toISOString() })
+    .where(
+      and(
+        eq(seoApiJobs.id, id),
+        eq(seoApiJobs.projectId, projectId),
+        eq(seoApiJobs.userId, userId),
+        eq(seoApiJobs.status, "pending"),
+      ),
+    )
+    .returning({ id: seoApiJobs.id });
+  return rows.length === 1;
+}
+
 async function markJobRunning(id: string, projectId: string, userId: string) {
   const rows = await db
     .update(seoApiJobs)
@@ -227,7 +429,14 @@ async function updateJob(
 ) {
   await db
     .update(seoApiJobs)
-    .set({ ...input, completedAt: new Date().toISOString() })
+    .set({
+      ...input,
+      ...(input.status === "complete" ||
+      input.status === "error" ||
+      input.status === "cancelled"
+        ? { completedAt: new Date().toISOString() }
+        : {}),
+    })
     .where(eq(seoApiJobs.id, id));
 }
 
@@ -274,7 +483,9 @@ async function getProjectKeyword(projectId: string, keywordId: string) {
   const [keyword] = await db
     .select()
     .from(seoKeywords)
-    .where(and(eq(seoKeywords.projectId, projectId), eq(seoKeywords.id, keywordId)))
+    .where(
+      and(eq(seoKeywords.projectId, projectId), eq(seoKeywords.id, keywordId)),
+    )
     .limit(1);
   return keyword ?? null;
 }
@@ -301,9 +512,16 @@ export const SeoIntelligenceRepository = {
   listSuggestionsForSeed,
   createApiJob,
   getApiJob,
+  listQueuedSerpJobs,
+  listApiJobs,
+  cancelPendingJob,
   markJobRunning,
   updateJob,
   getProjectKeyword,
   saveSerpSnapshot,
   latestSerpForKeyword,
+  ensureMatchPresets,
+  saveMatchPreset,
+  getMatchPreset,
+  saveOpportunityAssessment,
 };

@@ -126,6 +126,16 @@ export async function fetchLiveAutocomplete(input: {
   };
 }
 
+export async function fetchLiveAutocompleteWithCost(
+  input: Parameters<typeof fetchLiveAutocomplete>[0],
+) {
+  const response = await fetchLiveAutocomplete(input);
+  return {
+    data: { items: response.data, costUsd: response.billing.costUsd },
+    billing: response.billing,
+  };
+}
+
 export async function fetchLiveSerp(input: {
   keyword: string;
   locationCode: number;
@@ -160,6 +170,95 @@ export async function fetchLiveSerp(input: {
       serpSnapshotItemSchema,
     ),
     billing: buildTaskBilling(task),
+  };
+}
+
+export async function fetchLiveSerpWithCost(
+  input: Parameters<typeof fetchLiveSerp>[0],
+) {
+  const response = await fetchLiveSerp(input);
+  return {
+    data: { items: response.data, costUsd: response.billing.costUsd },
+    billing: response.billing,
+  };
+}
+
+export async function postSeoSerpTask(input: {
+  keyword: string;
+  locationCode: number;
+  languageCode: string;
+  mode: "standard" | "priority";
+}): Promise<DataforseoApiResponse<{ taskId: string; costUsd: number }>> {
+  const response = await dataforseoPost<
+    DataforseoTaskLike & { id?: string; data?: Record<string, unknown> }
+  >("/v3/serp/google/organic/task_post", [
+    {
+      keyword: input.keyword,
+      location_code: input.locationCode,
+      language_code: input.languageCode,
+      device: "desktop",
+      os: "windows",
+      depth: 10,
+      priority: input.mode === "priority" ? 2 : 1,
+    },
+  ]);
+  if (!response || response.status_code !== 20000) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      response?.status_message || "DataForSEO task_post failed",
+    );
+  }
+  const task = response.tasks?.[0];
+  if (!task?.id || task.status_code !== 20100) {
+    const message =
+      task?.status_message || "DataForSEO did not accept the queued task";
+    const billing = task ? buildTaskBilling(task) : undefined;
+    if (billing?.costUsd)
+      throw new DataforseoChargedTaskError(message, billing);
+    throw new AppError("INTERNAL_ERROR", message);
+  }
+  const billing = buildTaskBilling(task);
+  return { data: { taskId: task.id, costUsd: billing.costUsd }, billing };
+}
+
+export type SeoSerpTaskOutcome =
+  | { status: "pending" }
+  | { status: "failed"; message: string; costUsd: number }
+  | { status: "completed"; items: SerpLiveItem[]; costUsd: number };
+
+export async function fetchSeoSerpTaskResult(
+  taskId: string,
+): Promise<SeoSerpTaskOutcome> {
+  const response = await dataforseoGet(
+    `/v3/serp/google/organic/task_get/advanced/${encodeURIComponent(taskId)}`,
+  );
+  const task = response?.tasks?.[0];
+  if (!response || response.status_code !== 20000 || !task) {
+    throw new AppError(
+      "INTERNAL_ERROR",
+      response?.status_message || "DataForSEO task_get failed",
+    );
+  }
+  if (isTaskInProgress(task)) return { status: "pending" };
+  const costUsd = task.cost ?? 0;
+  if (task.status_code !== 20000) {
+    if (isNoResultsTask(task))
+      return { status: "completed", items: [], costUsd };
+    return {
+      status: "failed",
+      message:
+        task.status_message || `DataForSEO task failed (${task.status_code})`,
+      costUsd,
+    };
+  }
+  return {
+    status: "completed",
+    items: parseTaskItems(
+      "google-organic-task-get-advanced",
+      task,
+      serpSnapshotItemSchema,
+    ),
+    costUsd,
   };
 }
 

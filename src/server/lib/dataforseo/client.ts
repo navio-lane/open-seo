@@ -47,10 +47,13 @@ import {
 import {
   fetchLiveSerp,
   fetchLiveAutocomplete,
+  fetchLiveAutocompleteWithCost,
+  fetchLiveSerpWithCost,
   fetchLocalSerp,
   fetchRankCheckSerp,
   postLocalSerpTasks,
   postRankCheckTasks,
+  postSeoSerpTask,
 } from "@/server/lib/dataforseo/serp";
 import { fetchLighthouseResult } from "@/server/lib/dataforseo/lighthouse";
 import {
@@ -213,6 +216,21 @@ export function createDataforseoClient(customer: BillingCustomerContext) {
         dataforseoPricing.serp.autocomplete,
       ),
       live: meter(customer, fetchLiveSerp, dataforseoPricing.serp.live),
+      researchAutocomplete: meter(
+        customer,
+        fetchLiveAutocompleteWithCost,
+        dataforseoPricing.serp.autocomplete,
+      ),
+      researchLive: meter(
+        customer,
+        fetchLiveSerpWithCost,
+        dataforseoPricing.serp.live,
+      ),
+      researchTaskPost: meter(
+        customer,
+        postSeoSerpTask,
+        dataforseoPricing.serp.researchTaskPost,
+      ),
       // A rank check batch shares one credit hold and one settle across its
       // live calls (see meterDataforseoCalls). Resolves per call, in order.
       rankCheckBatch: (inputs: Parameters<typeof fetchRankCheckSerp>[0][]) =>

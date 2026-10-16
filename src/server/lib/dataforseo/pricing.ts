@@ -35,6 +35,7 @@ import {
   fetchRankCheckSerp,
   postLocalSerpTasks,
   postRankCheckTasks,
+  postSeoSerpTask,
   SERP_ANALYSIS_DEPTH,
 } from "@/server/lib/dataforseo/serp";
 import { fetchLighthouseResult } from "@/server/lib/dataforseo/lighthouse";
@@ -270,6 +271,13 @@ export const dataforseoPricing = {
           sum + serpUsd(clampSerpDepth(input.depth), "queued", task.keyword),
         0,
       ),
+    ),
+    researchTaskPost: priced(
+      postSeoSerpTask,
+      (input) =>
+        costPerSerpAtDepth(10, "queued") *
+        serpKeywordCostMultiplier(input.keyword) *
+        (input.mode === "priority" ? 2 : 1),
     ),
     local: priced(fetchLocalSerp, (input) =>
       input.searchType === "maps"

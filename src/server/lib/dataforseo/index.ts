@@ -21,6 +21,7 @@ export {
 export {
   SERP_ANALYSIS_DEPTH,
   fetchLiveAutocomplete,
+  fetchSeoSerpTaskResult,
 } from "@/server/lib/dataforseo/serp";
 
 export { normalizeBacklinksTarget } from "@/server/lib/dataforseoBacklinksTarget";

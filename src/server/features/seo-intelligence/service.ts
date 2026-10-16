@@ -1,27 +1,40 @@
 import { eq } from "drizzle-orm";
-import { db, projects } from "@/db";
+import { db } from "@/db";
+import { projects } from "@/db/schema";
 import { dataforseoPricing } from "@/server/lib/dataforseo/pricing";
-import { createDataforseoClient } from "@/server/lib/dataforseo";
+import {
+  createDataforseoClient,
+  fetchSeoSerpTaskResult,
+} from "@/server/lib/dataforseo";
 import type { BillingCustomerContext } from "@/server/billing/subscription";
 import { AppError } from "@/server/lib/errors";
+import { DataforseoChargedTaskError } from "@/server/lib/dataforseo/envelope";
 import { SeoIntelligenceRepository as repository } from "./repository";
+import {
+  classifyOpportunity,
+  classifyOrganicResult,
+  type MatchRules,
+} from "./matching";
 
 const UK_LOCATION_CODE = 2826;
 const DEFAULT_LANGUAGE_CODE = "en";
 const SERP_DEPTH = 10;
 const AUTOCOMPLETE_CLIENT = "gws-wiz-serp";
 const SERP_MODES = {
-  live: { label: "Live mode", price: 0.002 },
-  standard: { label: "Standard queue", price: 0.0006 },
-  priority: { label: "Priority queue", price: 0.0012 },
+  live: "Live mode",
+  standard: "Standard queue",
+  priority: "Priority queue",
 } as const;
 
 type SerpMode = keyof typeof SERP_MODES;
 
-function market(input: {
-  locationCode?: number;
-  languageCode?: string;
-}) {
+function chargedCost(error: unknown) {
+  return error instanceof DataforseoChargedTaskError
+    ? error.billing.costUsd
+    : undefined;
+}
+
+function market(input: { locationCode?: number; languageCode?: string }) {
   return {
     locationCode: input.locationCode ?? UK_LOCATION_CODE,
     languageCode: input.languageCode ?? DEFAULT_LANGUAGE_CODE,
@@ -49,8 +62,8 @@ async function estimateAutocomplete(input: {
       ...settings,
     }),
     settings,
-    alreadyCollected: existing.length > 0,
-    savedSuggestions: existing,
+    alreadyCollected: existing.seedExists,
+    savedSuggestions: existing.suggestions,
   };
 }
 
@@ -89,7 +102,10 @@ async function collectAutocomplete(
     user.userId,
   );
   if (!job || job.status !== "pending") {
-    throw new AppError("CONFLICT", "This approval has expired or was already used.");
+    throw new AppError(
+      "CONFLICT",
+      "This approval has expired or was already used.",
+    );
   }
   if (input.approvedCapUsd < job.estimateUsd) {
     throw new AppError(
@@ -97,7 +113,13 @@ async function collectAutocomplete(
       "The approved task limit is below the current estimate.",
     );
   }
-  if (!(await repository.markJobRunning(input.jobId, input.projectId, user.userId))) {
+  if (
+    !(await repository.markJobRunning(
+      input.jobId,
+      input.projectId,
+      user.userId,
+    ))
+  ) {
     throw new AppError("CONFLICT", "This task is already running or complete.");
   }
 
@@ -108,7 +130,7 @@ async function collectAutocomplete(
   };
   try {
     const client = createDataforseoClient(user);
-    const items = await client.serp.autocomplete({
+    const result = await client.serp.researchAutocomplete({
       keyword: request.seed,
       locationCode: request.locationCode,
       languageCode: request.languageCode,
@@ -116,7 +138,7 @@ async function collectAutocomplete(
     });
     const suggestions = [
       ...new Set(
-        items
+        result.items
           .filter((item) => item.type === "autocomplete")
           .map((item) => item.suggestion?.trim() ?? "")
           .filter(Boolean),
@@ -130,6 +152,7 @@ async function collectAutocomplete(
     });
     await repository.updateJob(input.jobId, {
       status: "complete",
+      actualUsd: result.costUsd,
       approvedCapUsd: input.approvedCapUsd,
     });
     return { suggestions: saved, collectedCount: suggestions.length };
@@ -137,7 +160,9 @@ async function collectAutocomplete(
     await repository.updateJob(input.jobId, {
       status: "error",
       approvedCapUsd: input.approvedCapUsd,
-      error: error instanceof Error ? error.message.slice(0, 500) : "Unknown error",
+      actualUsd: chargedCost(error),
+      error:
+        error instanceof Error ? error.message.slice(0, 500) : "Unknown error",
     });
     throw error;
   }
@@ -172,7 +197,20 @@ async function estimateSerp(input: {
     keyword,
     mode: input.mode,
     requestCount: 1,
-    estimateUsd: SERP_MODES[input.mode].price,
+    estimateUsd:
+      input.mode === "live"
+        ? dataforseoPricing.serp.live({
+            keyword: keyword.keyword,
+            locationCode: keyword.locationCode,
+            languageCode: keyword.languageCode,
+            depth: SERP_DEPTH,
+          })
+        : dataforseoPricing.serp.researchTaskPost({
+            keyword: keyword.keyword,
+            locationCode: keyword.locationCode,
+            languageCode: keyword.languageCode,
+            mode: input.mode,
+          }),
     savedSnapshot: null,
   };
 }
@@ -220,7 +258,10 @@ async function collectSerp(
     user.userId,
   );
   if (!job || job.status !== "pending") {
-    throw new AppError("CONFLICT", "This approval has expired or was already used.");
+    throw new AppError(
+      "CONFLICT",
+      "This approval has expired or was already used.",
+    );
   }
   if (input.approvedCapUsd < job.estimateUsd) {
     throw new AppError(
@@ -228,10 +269,123 @@ async function collectSerp(
       "The approved task limit is below the current estimate.",
     );
   }
-  if (!(await repository.markJobRunning(input.jobId, input.projectId, user.userId))) {
+  if (
+    !(await repository.markJobRunning(
+      input.jobId,
+      input.projectId,
+      user.userId,
+    ))
+  ) {
     throw new AppError("CONFLICT", "This task is already running or complete.");
   }
 
+  const request = JSON.parse(job.requestData) as {
+    keywordId: string;
+    locationCode: number;
+    languageCode: string;
+  };
+  try {
+    const keyword = await repository.getProjectKeyword(
+      input.projectId,
+      request.keywordId,
+    );
+    if (!keyword)
+      throw new AppError("NOT_FOUND", "Suggested keyword not found.");
+    if (job.mode === "live") {
+      const live = await createDataforseoClient(user).serp.researchLive({
+        keyword: keyword.keyword,
+        locationCode: request.locationCode,
+        languageCode: request.languageCode,
+        depth: SERP_DEPTH,
+      });
+      const organic = mapOrganicItems(live.items);
+      const snapshot = await repository.saveSerpSnapshot({
+        keyword,
+        ...request,
+        mode: job.mode,
+        results: organic,
+      });
+      await repository.updateJob(input.jobId, {
+        status: "complete",
+        actualUsd: live.costUsd,
+        approvedCapUsd: input.approvedCapUsd,
+      });
+      return { pending: false as const, snapshot, keyword, results: organic };
+    }
+    const posted = await createDataforseoClient(user).serp.researchTaskPost({
+      keyword: keyword.keyword,
+      locationCode: request.locationCode,
+      languageCode: request.languageCode,
+      mode: job.mode as "standard" | "priority",
+    });
+    await repository.updateJob(input.jobId, {
+      status: "queued",
+      approvedCapUsd: input.approvedCapUsd,
+      actualUsd: posted.costUsd,
+      providerTaskIds: JSON.stringify([posted.taskId]),
+    });
+    return { pending: true as const, taskId: posted.taskId, mode: job.mode };
+  } catch (error) {
+    await repository.updateJob(input.jobId, {
+      status: "error",
+      approvedCapUsd: input.approvedCapUsd,
+      actualUsd: chargedCost(error),
+      error:
+        error instanceof Error ? error.message.slice(0, 500) : "Unknown error",
+    });
+    throw error;
+  }
+}
+
+function mapOrganicItems(
+  items: Array<{
+    type: string;
+    rank_group?: number | null;
+    rank_absolute?: number | null;
+    title?: string | null;
+    url?: string | null;
+  }>,
+) {
+  return items
+    .filter((item) => item.type === "organic")
+    .sort(
+      (a, b) =>
+        (a.rank_group ?? a.rank_absolute ?? Number.MAX_SAFE_INTEGER) -
+        (b.rank_group ?? b.rank_absolute ?? Number.MAX_SAFE_INTEGER),
+    )
+    .slice(0, 10)
+    .map((item) => ({
+      rank: item.rank_group ?? item.rank_absolute ?? 0,
+      title: item.title ?? "",
+      url: item.url ?? "",
+      metadata: JSON.stringify(item),
+    }));
+}
+
+async function pollSerp(
+  input: { projectId: string; jobId: string },
+  user: BillingCustomerContext,
+) {
+  const job = await repository.getApiJob(
+    input.jobId,
+    input.projectId,
+    user.userId,
+  );
+  if (!job) throw new AppError("NOT_FOUND", "SERP task not found.");
+  if (job.status !== "queued")
+    throw new AppError("CONFLICT", "SERP task is not waiting for results.");
+  const [taskId] = JSON.parse(job.providerTaskIds) as string[];
+  if (!taskId) throw new AppError("INTERNAL_ERROR", "SERP task id is missing.");
+  const outcome = await fetchSeoSerpTaskResult(taskId);
+  if (outcome.status === "pending") return { pending: true as const };
+  if (outcome.status === "failed") {
+    await repository.updateJob(input.jobId, {
+      status: "error",
+      actualUsd: outcome.costUsd,
+      error: outcome.message,
+    });
+    return { pending: false as const, error: outcome.message };
+  }
   const request = JSON.parse(job.requestData) as {
     keywordId: string;
     locationCode: number;
@@ -242,54 +396,49 @@ async function collectSerp(
     request.keywordId,
   );
   if (!keyword) throw new AppError("NOT_FOUND", "Suggested keyword not found.");
-  try {
-    // The first implementation deliberately uses Live mode. Queue modes are
-    // selectable in estimates and will be connected to resumable task polling.
-    if (job.mode !== "live") {
-      throw new AppError(
-        "VALIDATION_ERROR",
-        "Queued SERP collection is not available yet. Choose Live mode.",
-      );
-    }
-    const items = await createDataforseoClient(user).serp.live({
-      keyword: keyword.keyword,
-      locationCode: request.locationCode,
-      languageCode: request.languageCode,
-      depth: SERP_DEPTH,
-    });
-    const organic = items
-      .filter((item) => item.type === "organic")
-      .sort(
-        (a, b) =>
-          (a.rank_group ?? a.rank_absolute ?? Number.MAX_SAFE_INTEGER) -
-          (b.rank_group ?? b.rank_absolute ?? Number.MAX_SAFE_INTEGER),
-      )
-      .slice(0, 10)
-      .map((item) => ({
-        rank: item.rank_group ?? item.rank_absolute ?? 0,
-        title: item.title ?? "",
-        url: item.url ?? "",
-        metadata: JSON.stringify(item),
-      }));
-    const snapshot = await repository.saveSerpSnapshot({
-      keyword,
-      ...request,
-      mode: job.mode,
-      results: organic,
-    });
-    await repository.updateJob(input.jobId, {
-      status: "complete",
-      approvedCapUsd: input.approvedCapUsd,
-    });
-    return { snapshot, keyword, results: organic };
-  } catch (error) {
-    await repository.updateJob(input.jobId, {
-      status: "error",
-      approvedCapUsd: input.approvedCapUsd,
-      error: error instanceof Error ? error.message.slice(0, 500) : "Unknown error",
-    });
-    throw error;
+  const results = mapOrganicItems(outcome.items);
+  const snapshot = await repository.saveSerpSnapshot({
+    keyword,
+    ...request,
+    mode: job.mode,
+    providerTaskId: taskId,
+    results,
+  });
+  await repository.updateJob(input.jobId, {
+    status: "complete",
+    actualUsd: outcome.costUsd,
+  });
+  return { pending: false as const, snapshot, keyword, results };
+}
+
+async function listQueuedSerpJobs(
+  projectId: string,
+  user: BillingCustomerContext,
+) {
+  return repository.listQueuedSerpJobs(projectId, user.userId);
+}
+
+async function listApiJobs(projectId: string, user: BillingCustomerContext) {
+  return repository.listApiJobs(projectId, user.userId);
+}
+
+async function cancelPendingJob(
+  input: { projectId: string; jobId: string },
+  user: BillingCustomerContext,
+) {
+  if (
+    !(await repository.cancelPendingJob(
+      input.jobId,
+      input.projectId,
+      user.userId,
+    ))
+  ) {
+    throw new AppError(
+      "CONFLICT",
+      "This approval has already been used or cancelled.",
+    );
   }
+  return { cancelled: true };
 }
 
 async function getSerp(projectId: string, keywordId: string) {
@@ -301,9 +450,96 @@ async function getSerp(projectId: string, keywordId: string) {
   };
 }
 
+async function listMatchPresets(projectId: string) {
+  return repository.ensureMatchPresets(projectId);
+}
+
+async function saveMatchPreset(input: {
+  projectId: string;
+  id?: string;
+  name: string;
+  rules: MatchRules;
+  isDefault: boolean;
+}) {
+  const saved = await repository.saveMatchPreset(input);
+  if (!saved)
+    throw new AppError("INTERNAL_ERROR", "Could not save matching preset.");
+  return saved;
+}
+
+async function getOpportunityReport(input: {
+  projectId: string;
+  keywordId: string;
+  presetId?: string;
+}) {
+  const keyword = await repository.getProjectKeyword(
+    input.projectId,
+    input.keywordId,
+  );
+  if (!keyword) throw new AppError("NOT_FOUND", "Suggested keyword not found.");
+  const presets = await repository.ensureMatchPresets(input.projectId);
+  const preset = input.presetId
+    ? await repository.getMatchPreset(input.projectId, input.presetId)
+    : (presets.find((item) => item.isDefault) ?? null);
+  if (!preset) throw new AppError("NOT_FOUND", "Matching preset not found.");
+  const snapshot = await repository.latestSerpForKeyword(keyword.id);
+  if (!snapshot)
+    return {
+      keyword,
+      preset,
+      snapshot: null,
+      status: "not_analyzed" as const,
+      results: [],
+    };
+  const validResults = snapshot.results.filter(
+    (result) => result.rank > 0 && result.title.trim() && result.url.trim(),
+  );
+  const classifications = validResults.map((result) =>
+    classifyOrganicResult(
+      keyword.keyword,
+      result.title,
+      result.url,
+      preset.rules,
+    ),
+  );
+  const status = classifyOpportunity(
+    classifications,
+    new Set(validResults.map((result) => result.rank)).size,
+  );
+  const counts = {
+    bothCount: classifications.filter((value) => value === "both").length,
+    titleOnlyCount: classifications.filter((value) => value === "title_only")
+      .length,
+    urlOnlyCount: classifications.filter((value) => value === "url_only")
+      .length,
+    neitherCount: classifications.filter((value) => value === "neither").length,
+  };
+  await repository.saveOpportunityAssessment({
+    snapshotId: snapshot.id,
+    presetId: preset.id,
+    presetVersion: preset.version,
+    status,
+    ...counts,
+  });
+  return {
+    keyword,
+    preset,
+    snapshot,
+    status,
+    ...counts,
+    results: validResults.map((result, index) => ({
+      ...result,
+      classification: classifications[index],
+    })),
+  };
+}
+
 async function getProjectSettings(projectId: string) {
   const [project] = await db
-    .select({ locationCode: projects.locationCode, languageCode: projects.languageCode })
+    .select({
+      locationCode: projects.locationCode,
+      languageCode: projects.languageCode,
+    })
     .from(projects)
     .where(eq(projects.id, projectId))
     .limit(1);
@@ -319,6 +555,13 @@ export const SeoIntelligenceService = {
   prepareSerp,
   collectSerp,
   getSerp,
+  pollSerp,
+  listQueuedSerpJobs,
+  listApiJobs,
+  cancelPendingJob,
+  listMatchPresets,
+  saveMatchPreset,
+  getOpportunityReport,
   getProjectSettings,
 };
 
