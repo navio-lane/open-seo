@@ -971,8 +971,8 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                   ? "Article opportunity: yes"
                   : report.status === "not_candidate"
                     ? "Article opportunity: no"
-                    : report.status === "incomplete"
-                      ? "Incomplete SERP: cannot classify"
+                    : report.status === "potential_candidate"
+                      ? `Potential article opportunity: yes (${report.snapshot?.resultCount ?? 0}/10 organic results; SERP incomplete)`
                       : "No saved SERP yet"}
               </p>
               {report.snapshot ? (

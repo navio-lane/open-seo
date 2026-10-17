@@ -99,10 +99,9 @@ export function classifyOpportunity(
   classifications: MatchClassification[],
   validOrganicResultCount: number,
 ) {
-  if (validOrganicResultCount !== 10 || classifications.length !== 10) {
-    return "incomplete" as const;
+  if (classifications.includes("both")) return "not_candidate" as const;
+  if (validOrganicResultCount === 10 && classifications.length === 10) {
+    return "candidate" as const;
   }
-  return classifications.includes("both")
-    ? ("not_candidate" as const)
-    : ("candidate" as const);
+  return "potential_candidate" as const;
 }

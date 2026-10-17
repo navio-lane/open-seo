@@ -63,8 +63,10 @@ describe("SEO opportunity matching", () => {
     ).toBe("url_only");
   });
 
-  it("only calls exactly ten evaluated results complete opportunities", () => {
-    expect(classifyOpportunity(Array(9).fill("neither"), 9)).toBe("incomplete");
+  it("marks partial no-match SERPs as potential opportunities", () => {
+    expect(classifyOpportunity(Array(9).fill("neither"), 9)).toBe(
+      "potential_candidate",
+    );
     expect(classifyOpportunity([...Array(9).fill("neither"), "both"], 10)).toBe(
       "not_candidate",
     );
