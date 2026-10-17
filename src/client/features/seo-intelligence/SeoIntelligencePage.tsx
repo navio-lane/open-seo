@@ -59,6 +59,24 @@ function serpModeLabel(mode: "live" | "standard" | "priority") {
       : "Priority queue";
 }
 
+function parseIgnoredWords(value: string) {
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((word) => word.trim().toLocaleLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function ignoredWordsText(rules: MatchRules) {
+  return {
+    titleIgnoredWords: rules.titleIgnoredWords.join(", "),
+    urlIgnoredWords: rules.urlIgnoredWords.join(", "),
+  };
+}
+
 export function SeoIntelligencePage({ projectId }: { projectId: string }) {
   const [seed, setSeed] = useState("");
   const [locationCode, setLocationCode] = useState(2826);
@@ -83,11 +101,15 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
     urlPathOnly: true,
     ampersandEqualsAnd: true,
   });
+  const [ignoredWordsDraft, setIgnoredWordsDraft] = useState({
+    titleIgnoredWords: "",
+    urlIgnoredWords: "a, an, the, and",
+  });
   const [report, setReport] = useState<OpportunityReport | null>(null);
   const [loading, setLoading] = useState(false);
 
   const reloadSuggestions = useCallback(async () => {
-    const rows = await listSeoSuggestions();
+    const rows = await listSeoSuggestions({ data: { projectId } });
     setSuggestions(rows);
     setSelected((current) =>
       current.filter((id) => rows.some((row) => row.id === id)),
@@ -95,8 +117,8 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
   }, []);
 
   const reloadApiJobs = useCallback(async () => {
-    setApiJobs(await listSeoApiJobs());
-  }, []);
+    setApiJobs(await listSeoApiJobs({ data: { projectId } }));
+  }, [projectId]);
 
   useEffect(() => {
     void reloadSuggestions().catch((error: unknown) => {
@@ -119,7 +141,10 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
   }, [projectId, reloadApiJobs]);
 
   useEffect(() => {
-    void Promise.all([listSeoMatchPresets(), listQueuedSeoSerpJobs()])
+    void Promise.all([
+      listSeoMatchPresets({ data: { projectId } }),
+      listQueuedSeoSerpJobs({ data: { projectId } }),
+    ])
       .then(([savedPresets, queuedJobs]) => {
         setPresets(savedPresets);
         setPendingJobIds(queuedJobs.map((job) => job.id));
@@ -129,6 +154,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           setPresetId(selectedPreset.id);
           setPresetName(selectedPreset.name);
           setRules(selectedPreset.rules);
+          setIgnoredWordsDraft(ignoredWordsText(selectedPreset.rules));
         }
       })
       .catch((error: unknown) =>
@@ -149,7 +175,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       const finished: string[] = [];
       for (const jobId of pendingJobIds) {
         try {
-          const outcome = await pollSeoSerp({ data: { jobId } });
+          const outcome = await pollSeoSerp({ data: { projectId, jobId } });
           if (outcome.pending) continue;
           finished.push(jobId);
           if ("error" in outcome)
@@ -157,7 +183,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           else
             setActiveSerp(
               await getSavedSeoSerp({
-                data: { keywordId: outcome.keyword.id },
+                data: { projectId, keywordId: outcome.keyword.id },
               }),
             );
         } catch (error) {
@@ -184,7 +210,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [pendingJobIds, reloadApiJobs]);
+  }, [pendingJobIds, projectId, reloadApiJobs]);
 
   async function prepareAutocomplete(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -192,7 +218,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
     setLoading(true);
     try {
       const prepared = await prepareSeoAutocomplete({
-        data: { seed: seed.trim(), locationCode, languageCode },
+        data: { projectId, seed: seed.trim(), locationCode, languageCode },
       });
       if (prepared.alreadyCollected) {
         await reloadSuggestions();
@@ -238,7 +264,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       const prepared = [];
       for (const keywordId of ids) {
         const result = await prepareSeoSerp({
-          data: { keywordId, mode: serpMode, refresh },
+          data: { projectId, keywordId, mode: serpMode, refresh },
         });
         if (result.jobId) preparedJobs.push(result.jobId);
         prepared.push(result);
@@ -270,7 +296,9 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       }
     } catch (error) {
       await Promise.allSettled(
-        preparedJobs.map((jobId) => cancelSeoPaidJob({ data: { jobId } })),
+        preparedJobs.map((jobId) =>
+          cancelSeoPaidJob({ data: { projectId, jobId } }),
+        ),
       );
       toast.error(
         error instanceof Error
@@ -290,6 +318,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       if (approval.type === "autocomplete") {
         await collectSeoAutocomplete({
           data: {
+            projectId,
             jobId: approval.jobId,
             approvedCapUsd: approval.capUsd,
           },
@@ -301,13 +330,19 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         let saved = 0;
         for (const task of approval.jobs) {
           const result = await collectSeoSerp({
-            data: { jobId: task.jobId, approvedCapUsd: approval.capUsd },
+            data: {
+              projectId,
+              jobId: task.jobId,
+              approvedCapUsd: approval.capUsd,
+            },
           });
           if (result.pending) queuedJobIds.push(task.jobId);
           else {
             saved += 1;
             setActiveSerp(
-              await getSavedSeoSerp({ data: { keywordId: result.keyword.id } }),
+              await getSavedSeoSerp({
+                data: { projectId, keywordId: result.keyword.id },
+              }),
             );
           }
         }
@@ -327,7 +362,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       if (approval.type === "serp") {
         await Promise.allSettled(
           approval.jobs.map(({ jobId }) =>
-            cancelSeoPaidJob({ data: { jobId } }),
+            cancelSeoPaidJob({ data: { projectId, jobId } }),
           ),
         );
         if (queuedJobIds.length)
@@ -353,7 +388,9 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           ? approval.jobs.map((job) => job.jobId)
           : [approval.jobId];
       await Promise.all(
-        ids.map((jobId) => cancelSeoPaidJob({ data: { jobId } })),
+          ids.map((jobId) =>
+            cancelSeoPaidJob({ data: { projectId, jobId } }),
+          ),
       );
       setApproval(null);
       await reloadApiJobs();
@@ -370,6 +407,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
     setPresetId(preset.id);
     setPresetName(preset.name);
     setRules(preset.rules);
+    setIgnoredWordsDraft(ignoredWordsText(preset.rules));
     setReport(null);
   }
 
@@ -377,6 +415,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
     try {
       const saved = await saveSeoMatchPreset({
         data: {
+          projectId,
           ...(id ? { id } : {}),
           name: presetName,
           rules,
@@ -385,14 +424,18 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             : false,
         },
       });
-      const next = await listSeoMatchPresets();
+      const next = await listSeoMatchPresets({ data: { projectId } });
       setPresets(next);
       if (saved) {
         selectPreset(saved);
         if (activeSerp) {
           setReport(
             await getSeoOpportunityReport({
-              data: { keywordId: activeSerp.keyword.id, presetId: saved.id },
+              data: {
+                projectId,
+                keywordId: activeSerp.keyword.id,
+                presetId: saved.id,
+              },
             }),
           );
         }
@@ -420,6 +463,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       ) {
         const saved = await saveSeoMatchPreset({
           data: {
+            projectId,
             id: selectedPreset.id,
             name: presetName,
             rules,
@@ -427,16 +471,17 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           },
         });
         selectedPresetId = saved.id;
-        setPresets(await listSeoMatchPresets());
+        setPresets(await listSeoMatchPresets({ data: { projectId } }));
       }
       const next = await getSeoOpportunityReport({
         data: {
+          projectId,
           keywordId,
           ...(selectedPresetId ? { presetId: selectedPresetId } : {}),
         },
       });
       setReport(next);
-      const saved = await getSavedSeoSerp({ data: { keywordId } });
+      const saved = await getSavedSeoSerp({ data: { projectId, keywordId } });
       setActiveSerp(saved);
     } catch (error) {
       toast.error(
@@ -647,20 +692,18 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                 (comma separated)
               </span>
               <Input
-                value={rules[field].join(", ")}
-                onChange={(event) =>
+                value={ignoredWordsDraft[field]}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setIgnoredWordsDraft((current) => ({
+                    ...current,
+                    [field]: value,
+                  }));
                   setRules((current) => ({
                     ...current,
-                    [field]: [
-                      ...new Set(
-                        event.target.value
-                          .split(",")
-                          .map((word) => word.trim().toLocaleLowerCase())
-                          .filter(Boolean),
-                      ),
-                    ],
-                  }))
-                }
+                    [field]: parseIgnoredWords(value),
+                  }));
+                }}
               />
             </label>
           ))}

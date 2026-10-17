@@ -11,16 +11,19 @@ import {
   seoMatchPresetSaveSchema,
   seoOpportunityReportSchema,
   seoCancelJobSchema,
+  seoProjectSchema,
 } from "@/types/schemas/seo-intelligence";
 
 export const getSeoResearchSettings = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
+  .validator(seoProjectSchema)
   .handler(({ context }) =>
     SeoIntelligenceService.getProjectSettings(context.projectId),
   );
 
 export const listSeoSuggestions = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
+  .validator(seoProjectSchema)
   .handler(({ context }) =>
     SeoIntelligenceService.listSuggestions(context.projectId),
   );
@@ -84,18 +87,21 @@ export const pollSeoSerp = createServerFn({ method: "POST" })
 
 export const listQueuedSeoSerpJobs = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
+  .validator(seoProjectSchema)
   .handler(({ context }) =>
     SeoIntelligenceService.listQueuedSerpJobs(context.projectId, context),
   );
 
 export const listSeoApiJobs = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
+  .validator(seoProjectSchema)
   .handler(({ context }) =>
     SeoIntelligenceService.listApiJobs(context.projectId, context),
   );
 
 export const listSeoMatchPresets = createServerFn({ method: "POST" })
   .middleware(requireProjectContext)
+  .validator(seoProjectSchema)
   .handler(({ context }) =>
     SeoIntelligenceService.listMatchPresets(context.projectId),
   );
