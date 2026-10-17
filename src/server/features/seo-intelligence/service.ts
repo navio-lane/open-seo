@@ -534,6 +534,58 @@ async function getOpportunityReport(input: {
   };
 }
 
+async function getProjectOpportunityExport(input: {
+  projectId: string;
+  presetId?: string;
+}) {
+  const presets = await repository.ensureMatchPresets(input.projectId);
+  const preset = input.presetId
+    ? await repository.getMatchPreset(input.projectId, input.presetId)
+    : (presets.find((item) => item.isDefault) ?? null);
+  if (!preset) throw new AppError("NOT_FOUND", "Matching preset not found.");
+
+  const [suggestions, snapshots] = await Promise.all([
+    repository.listSuggestions(input.projectId),
+    repository.listLatestSerpsForProject(input.projectId),
+  ]);
+  const seedsByKeyword = new Map(
+    suggestions.map((suggestion) => [suggestion.id, suggestion.seeds]),
+  );
+  return snapshots.flatMap((snapshot) => {
+    const validResults = snapshot.results.filter(
+      (result) => result.rank > 0 && result.title.trim() && result.url.trim(),
+    );
+    const classifications = validResults.map((result) =>
+      classifyOrganicResult(
+        snapshot.keyword,
+        result.title,
+        result.url,
+        preset.rules,
+      ),
+    );
+    const opportunity = classifyOpportunity(
+      classifications,
+      new Set(validResults.map((result) => result.rank)).size,
+    );
+    if (opportunity !== "candidate" && opportunity !== "potential_candidate")
+      return [];
+    return [
+      {
+        keyword: snapshot.keyword,
+        seeds: seedsByKeyword.get(snapshot.keywordId) ?? [],
+        locationCode: snapshot.locationCode,
+        languageCode: snapshot.languageCode,
+        status: opportunity,
+        presetName: preset.name,
+        serpStatus: snapshot.status,
+        resultCount: validResults.length,
+        bothCount: classifications.filter((value) => value === "both").length,
+        capturedAt: snapshot.capturedAt,
+      },
+    ];
+  });
+}
+
 async function getProjectSettings(projectId: string) {
   const [project] = await db
     .select({
@@ -562,6 +614,7 @@ export const SeoIntelligenceService = {
   listMatchPresets,
   saveMatchPreset,
   getOpportunityReport,
+  getProjectOpportunityExport,
   getProjectSettings,
 };
 

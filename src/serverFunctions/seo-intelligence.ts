@@ -12,6 +12,7 @@ import {
   seoOpportunityReportSchema,
   seoCancelJobSchema,
   seoProjectSchema,
+  seoOpportunityExportSchema,
 } from "@/types/schemas/seo-intelligence";
 
 export const getSeoResearchSettings = createServerFn({ method: "POST" })
@@ -121,6 +122,16 @@ export const getSeoOpportunityReport = createServerFn({ method: "POST" })
   .validator(seoOpportunityReportSchema)
   .handler(({ data, context }) =>
     SeoIntelligenceService.getOpportunityReport({
+      ...data,
+      projectId: context.projectId,
+    }),
+  );
+
+export const getSeoProjectOpportunityExport = createServerFn({ method: "POST" })
+  .middleware(requireProjectContext)
+  .validator(seoOpportunityExportSchema)
+  .handler(({ data, context }) =>
+    SeoIntelligenceService.getProjectOpportunityExport({
       ...data,
       projectId: context.projectId,
     }),

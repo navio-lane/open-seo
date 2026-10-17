@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   seoApiJobs,
@@ -506,6 +506,48 @@ async function latestSerpForKeyword(keywordId: string) {
   return { ...snapshot, results };
 }
 
+async function listLatestSerpsForProject(projectId: string) {
+  const snapshots = await db
+    .select({
+      keywordId: seoKeywords.id,
+      keyword: seoKeywords.keyword,
+      locationCode: seoKeywords.locationCode,
+      languageCode: seoKeywords.languageCode,
+      snapshotId: seoSerpSnapshots.id,
+      status: seoSerpSnapshots.status,
+      resultCount: seoSerpSnapshots.resultCount,
+      capturedAt: seoSerpSnapshots.capturedAt,
+    })
+    .from(seoSerpSnapshots)
+    .innerJoin(seoKeywords, eq(seoKeywords.id, seoSerpSnapshots.keywordId))
+    .where(eq(seoKeywords.projectId, projectId))
+    .orderBy(desc(seoSerpSnapshots.capturedAt), desc(seoSerpSnapshots.id));
+  const latestByKeyword = new Map<string, (typeof snapshots)[number]>();
+  for (const snapshot of snapshots) {
+    if (!latestByKeyword.has(snapshot.keywordId))
+      latestByKeyword.set(snapshot.keywordId, snapshot);
+  }
+  const latest = [...latestByKeyword.values()];
+  if (latest.length === 0) return [];
+
+  const snapshotIds = latest.map((snapshot) => snapshot.snapshotId);
+  const results = await db
+    .select()
+    .from(seoOrganicResults)
+    .where(inArray(seoOrganicResults.snapshotId, snapshotIds))
+    .orderBy(asc(seoOrganicResults.rank));
+  const resultsBySnapshot = new Map<string, typeof results>();
+  for (const result of results) {
+    const snapshotResults = resultsBySnapshot.get(result.snapshotId) ?? [];
+    snapshotResults.push(result);
+    resultsBySnapshot.set(result.snapshotId, snapshotResults);
+  }
+  return latest.map((snapshot) => ({
+    ...snapshot,
+    results: resultsBySnapshot.get(snapshot.snapshotId) ?? [],
+  }));
+}
+
 export const SeoIntelligenceRepository = {
   saveAutocomplete,
   listSuggestions,
@@ -520,6 +562,7 @@ export const SeoIntelligenceRepository = {
   getProjectKeyword,
   saveSerpSnapshot,
   latestSerpForKeyword,
+  listLatestSerpsForProject,
   ensureMatchPresets,
   saveMatchPreset,
   getMatchPreset,

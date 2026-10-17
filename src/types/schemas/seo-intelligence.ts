@@ -69,3 +69,8 @@ export const seoOpportunityReportSchema = z.object({
   keywordId: z.string().uuid(),
   presetId: z.string().uuid().optional(),
 });
+
+export const seoOpportunityExportSchema = z.object({
+  ...projectScope,
+  presetId: z.string().uuid().optional(),
+});

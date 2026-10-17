@@ -10,6 +10,7 @@ import {
   cancelSeoPaidJob,
   getSavedSeoSerp,
   getSeoOpportunityReport,
+  getSeoProjectOpportunityExport,
   listSeoApiJobs,
   listQueuedSeoSerpJobs,
   listSeoMatchPresets,
@@ -454,25 +455,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
 
   async function checkOpportunity(keywordId: string) {
     try {
-      let selectedPresetId = presetId;
-      const selectedPreset = presets.find((item) => item.id === presetId);
-      if (
-        selectedPreset &&
-        (selectedPreset.name !== presetName ||
-          JSON.stringify(selectedPreset.rules) !== JSON.stringify(rules))
-      ) {
-        const saved = await saveSeoMatchPreset({
-          data: {
-            projectId,
-            id: selectedPreset.id,
-            name: presetName,
-            rules,
-            isDefault: selectedPreset.isDefault,
-          },
-        });
-        selectedPresetId = saved.id;
-        setPresets(await listSeoMatchPresets({ data: { projectId } }));
-      }
+      const selectedPresetId = await saveCurrentPresetIfChanged();
       const next = await getSeoOpportunityReport({
         data: {
           projectId,
@@ -490,6 +473,28 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           : "Could not classify saved search results.",
       );
     }
+  }
+
+  async function saveCurrentPresetIfChanged() {
+    const selectedPreset = presets.find((item) => item.id === presetId);
+    if (
+      !selectedPreset ||
+      (selectedPreset.name === presetName &&
+        JSON.stringify(selectedPreset.rules) === JSON.stringify(rules))
+    ) {
+      return presetId;
+    }
+    const saved = await saveSeoMatchPreset({
+      data: {
+        projectId,
+        id: selectedPreset.id,
+        name: presetName,
+        rules,
+        isDefault: selectedPreset.isDefault,
+      },
+    });
+    setPresets(await listSeoMatchPresets({ data: { projectId } }));
+    return saved.id;
   }
 
   function exportKeywordsCsv() {
@@ -512,6 +517,70 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
     link.download = "seo-keywords.csv";
     link.click();
     URL.revokeObjectURL(link.href);
+  }
+
+  async function exportProjectOpportunitiesCsv() {
+    setLoading(true);
+    try {
+      const selectedPresetId = await saveCurrentPresetIfChanged();
+      const opportunities = await getSeoProjectOpportunityExport({
+        data: {
+          projectId,
+          ...(selectedPresetId ? { presetId: selectedPresetId } : {}),
+        },
+      });
+      if (opportunities.length === 0) {
+        toast.message("No article opportunities were found in saved SERPs.");
+        return;
+      }
+      const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
+      const rows = [
+        [
+          "Keyword",
+          "Seed keywords",
+          "Opportunity status",
+          "Matching preset",
+          "SERP results",
+          "SERP status",
+          "Matching results",
+          "Location code",
+          "Language",
+          "SERP captured at",
+        ],
+        ...opportunities.map((item) => [
+          item.keyword,
+          item.seeds.join(" | "),
+          item.status === "candidate"
+            ? "Article opportunity"
+            : "Potential article opportunity",
+          item.presetName,
+          String(item.resultCount),
+          item.serpStatus,
+          String(item.bothCount),
+          String(item.locationCode),
+          item.languageCode,
+          item.capturedAt,
+        ]),
+      ];
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(
+        new Blob([rows.map((row) => row.map(escape).join(",")).join("\r\n")], {
+          type: "text/csv;charset=utf-8",
+        }),
+      );
+      link.download = "seo-opportunities.csv";
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast.success(`Exported ${opportunities.length} article opportunities.`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not export saved article opportunities.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   function exportOpportunityCsv() {
@@ -792,6 +861,13 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             onClick={exportKeywordsCsv}
           >
             Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            disabled={suggestions.length === 0 || !presetId || loading}
+            onClick={() => void exportProjectOpportunitiesCsv()}
+          >
+            Export opportunities
           </Button>
         </div>
         <div className="px-4 pb-4">
