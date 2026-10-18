@@ -381,7 +381,10 @@ async function pollSerp(
   if (outcome.status === "failed") {
     await repository.updateJob(input.jobId, {
       status: "error",
-      actualUsd: outcome.costUsd,
+      // task_post is the billable request. A failed task_get can report zero
+      // even after DataForSEO charged for and completed the task, so never
+      // overwrite the posted cost with a lower retrieval-response cost.
+      actualUsd: Math.max(job.actualUsd ?? 0, outcome.costUsd),
       error: outcome.message,
     });
     return { pending: false as const, error: outcome.message };
