@@ -723,11 +723,11 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           suggestions are reused without another request.
         </p>
         <form
-          className="mt-4 grid gap-3 md:grid-cols-[minmax(16rem,1fr)_14rem_10rem_auto]"
+          className="mt-4 grid items-end gap-3 md:grid-cols-[minmax(16rem,1fr)_14rem_10rem_auto]"
           onSubmit={prepareAutocomplete}
         >
           <Input
-            className="bg-muted/50"
+            className="bg-[#ededed]"
             value={seed}
             onChange={(event) => setSeed(event.target.value)}
             placeholder="Enter a seed keyword"
@@ -737,7 +737,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           <label className="grid gap-1 text-sm">
             <span>Google location</span>
             <select
-              className="h-9 rounded-md border border-border bg-muted/50 px-3"
+              className="h-9 rounded-md border border-border bg-[#ededed] px-3"
               value={locationCode}
               onChange={(event) => {
                 const next = Number(event.target.value);
@@ -755,7 +755,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           <label className="grid gap-1 text-sm">
             <span>Language</span>
             <select
-              className="h-9 rounded-md border border-border bg-muted/50 px-3"
+              className="h-9 rounded-md border border-border bg-[#ededed] px-3"
               value={languageCode}
               onChange={(event) => setLanguageCode(event.target.value)}
             >
@@ -830,7 +830,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           <label className="grid max-w-sm gap-1 text-sm">
             <span>How to fetch Google results</span>
             <select
-              className="h-9 rounded-md border border-border bg-muted/50 px-3"
+              className="h-9 rounded-md border border-border bg-[#ededed] px-3"
               value={serpMode}
               onChange={(event) =>
                 setSerpMode(event.target.value as typeof serpMode)
@@ -915,7 +915,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             <label className="grid gap-1 text-sm">
               <span>Saved preset</span>
               <select
-                className="h-9 rounded-md border border-border bg-muted/50 px-3"
+                className="h-9 rounded-md border border-border bg-[#ededed] px-3"
                 value={presetId}
                 onChange={(event) => {
                   const preset = presets.find(
@@ -935,7 +935,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             <label className="grid gap-1 text-sm">
               <span>Preset name</span>
               <Input
-                className="bg-muted/50"
+                className="bg-[#ededed]"
                 value={presetName}
                 onChange={(event) => setPresetName(event.target.value)}
                 maxLength={80}
@@ -969,7 +969,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                   (comma separated)
                 </span>
                 <Input
-                  className="bg-muted/50"
+                  className="bg-[#ededed]"
                   value={ignoredWordsDraft[field]}
                   onChange={(event) => {
                     const value = event.target.value;
@@ -1256,7 +1256,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                   min={approval.estimateUsd}
                   max={1000}
                   step="0.0001"
-                  className="ml-auto w-36 text-right"
+                  className="ml-auto w-36 bg-[#ededed] text-right"
                   value={approval.capUsd}
                   onChange={(event) =>
                     setApproval((current) =>
