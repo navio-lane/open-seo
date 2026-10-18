@@ -686,10 +686,10 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
   const languages = getLanguageOptions(locationCode);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 px-3 py-2 md:px-4">
       {isGoogleResultsWorking ? (
         <div
-          className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm shadow-lg"
+          className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm shadow-lg"
           role="status"
           aria-live="polite"
         >
@@ -703,7 +703,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         </div>
       ) : serpCompletedAt !== null ? (
         <div
-          className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm shadow-lg"
+          className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm shadow-lg"
           role="status"
           aria-live="polite"
         >
@@ -716,7 +716,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         description="Collect Google suggestions and review the first ten organic results for each keyword."
       />
 
-      <section className="rounded-lg border p-4">
+      <section className="rounded-lg border border-border bg-card p-4 shadow-sm">
         <h2 className="text-lg font-semibold">Google Autocomplete</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           One paid DataForSEO request collects suggestions for one seed. Saved
@@ -727,6 +727,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           onSubmit={prepareAutocomplete}
         >
           <Input
+            className="bg-muted/50"
             value={seed}
             onChange={(event) => setSeed(event.target.value)}
             placeholder="Enter a seed keyword"
@@ -736,7 +737,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           <label className="grid gap-1 text-sm">
             <span>Google location</span>
             <select
-              className="h-9 rounded-md border bg-background px-3"
+              className="h-9 rounded-md border border-border bg-muted/50 px-3"
               value={locationCode}
               onChange={(event) => {
                 const next = Number(event.target.value);
@@ -754,7 +755,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           <label className="grid gap-1 text-sm">
             <span>Language</span>
             <select
-              className="h-9 rounded-md border bg-background px-3"
+              className="h-9 rounded-md border border-border bg-muted/50 px-3"
               value={languageCode}
               onChange={(event) => setLanguageCode(event.target.value)}
             >
@@ -775,8 +776,8 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         </form>
       </section>
 
-      <section className="rounded-lg border">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
+      <section className="rounded-lg border border-border bg-card shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
           <div>
             <h2 className="text-lg font-semibold">Saved suggestions</h2>
             <p className="text-sm text-muted-foreground">
@@ -796,6 +797,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           </div>
           <Button
             variant="outline"
+            className="border-primary text-primary hover:bg-primary/5"
             disabled={selected.length === 0 || loading}
             onClick={() => void prepareSerp(selected)}
           >
@@ -809,6 +811,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           </Button>
           <Button
             variant="outline"
+            className="border-primary text-primary hover:bg-primary/5"
             disabled={suggestions.length === 0}
             onClick={exportKeywordsCsv}
           >
@@ -816,17 +819,18 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           </Button>
           <Button
             variant="outline"
+            className="border-primary text-primary hover:bg-primary/5"
             disabled={suggestions.length === 0 || !presetId || loading}
             onClick={() => void exportProjectOpportunitiesCsv()}
           >
             Export opportunities
           </Button>
         </div>
-        <div className="px-4 pb-4">
+        <div className="border-b border-border px-4 pb-4">
           <label className="grid max-w-sm gap-1 text-sm">
             <span>How to fetch Google results</span>
             <select
-              className="h-9 rounded-md border bg-background px-3"
+              className="h-9 rounded-md border border-border bg-muted/50 px-3"
               value={serpMode}
               onChange={(event) =>
                 setSerpMode(event.target.value as typeof serpMode)
@@ -851,7 +855,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             {suggestions.map((item) => (
               <div
                 key={item.id}
-                className="flex flex-wrap items-center gap-3 p-3"
+                className="flex flex-wrap items-center gap-3 p-3 transition-colors hover:bg-muted/30"
               >
                 <input
                   type="checkbox"
@@ -877,13 +881,13 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="border-primary text-primary hover:bg-primary/5"
                   disabled={loading}
                   onClick={() => void prepareSerp(item.id)}
                 >
                   Get / view Google results
                 </Button>
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={() => void checkOpportunity(item.id)}
                 >
@@ -895,7 +899,10 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         )}
       </section>
 
-      <details className="rounded-lg border p-4" open>
+      <details
+        className="rounded-lg border border-border bg-card p-4 shadow-sm"
+        open
+      >
         <summary className="cursor-pointer font-semibold">
           Matching rules and presets
         </summary>
@@ -908,7 +915,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             <label className="grid gap-1 text-sm">
               <span>Saved preset</span>
               <select
-                className="h-9 rounded-md border bg-background px-3"
+                className="h-9 rounded-md border border-border bg-muted/50 px-3"
                 value={presetId}
                 onChange={(event) => {
                   const preset = presets.find(
@@ -928,6 +935,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             <label className="grid gap-1 text-sm">
               <span>Preset name</span>
               <Input
+                className="bg-muted/50"
                 value={presetName}
                 onChange={(event) => setPresetName(event.target.value)}
                 maxLength={80}
@@ -936,12 +944,17 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             <div className="flex items-end gap-2">
               <Button
                 variant="outline"
+                className="border-primary text-primary hover:bg-primary/5"
                 disabled={!presetId}
                 onClick={() => void savePreset(presetId)}
               >
                 Save changes
               </Button>
-              <Button variant="outline" onClick={() => void savePreset()}>
+              <Button
+                variant="outline"
+                className="border-primary text-primary hover:bg-primary/5"
+                onClick={() => void savePreset()}
+              >
                 Save as new
               </Button>
             </div>
@@ -956,6 +969,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                   (comma separated)
                 </span>
                 <Input
+                  className="bg-muted/50"
                   value={ignoredWordsDraft[field]}
                   onChange={(event) => {
                     const value = event.target.value;
@@ -1030,7 +1044,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       </details>
 
       {apiJobs.length ? (
-        <section className="space-y-3 rounded-lg border p-4">
+        <section className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-sm">
           <div>
             <h2 className="text-lg font-semibold">Recent DataForSEO tasks</h2>
             <p className="text-sm text-muted-foreground">
@@ -1073,8 +1087,8 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       ) : null}
 
       {activeSerp ? (
-        <section className="rounded-lg border">
-          <div className="border-b p-4">
+        <section className="rounded-lg border border-border bg-card shadow-sm">
+          <div className="border-b border-border p-4">
             <h2 className="text-lg font-semibold">
               Google organic results for “{activeSerp.keyword.keyword}”
             </h2>
@@ -1088,9 +1102,9 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                 : ""}
             </p>
             <Button
-              className="mt-2"
               variant="outline"
               size="sm"
+              className="mt-2 border-primary text-primary hover:bg-primary/5"
               disabled={loading}
               onClick={() => void prepareSerp(activeSerp.keyword.id, true)}
             >
@@ -1128,7 +1142,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       ) : null}
 
       {report ? (
-        <section className="space-y-3 rounded-lg border p-4">
+        <section className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <h2 className="text-lg font-semibold">
@@ -1153,7 +1167,12 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                 </p>
               ) : null}
             </div>
-            <Button variant="outline" size="sm" onClick={exportOpportunityCsv}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-primary text-primary hover:bg-primary/5"
+              onClick={exportOpportunityCsv}
+            >
               Export assessment CSV
             </Button>
           </div>
