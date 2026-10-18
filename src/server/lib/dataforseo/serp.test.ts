@@ -7,8 +7,10 @@ vi.mock("@/server/lib/runtime-env", () => ({
 import { DataforseoChargedTaskError } from "@/server/lib/dataforseo/envelope";
 import {
   fetchLiveSerp,
+  fetchLiveSerpWithCost,
   fetchLocalSerpTaskResult,
   fetchRankCheckTaskResult,
+  fetchSeoSerpTaskResult,
   postLocalSerpTasks,
   postRankCheckTasks,
 } from "@/server/lib/dataforseo/serp";
@@ -22,6 +24,107 @@ function parseDataforseoRequestBody(init: RequestInit | undefined): unknown {
 }
 
 describe("live SERP", () => {
+  it("detects AI Overviews from the same standard SERP response", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        status_code: 20000,
+        tasks: [
+          {
+            status_code: 20000,
+            cost: 0.0006,
+            path: ["v3", "serp", "google", "organic", "live", "advanced"],
+            result: [
+              {
+                item_types: ["ai_overview", "organic"],
+                items: [
+                  {
+                    type: "organic",
+                    title: "Result",
+                    url: "https://example.com",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await fetchLiveSerpWithCost({
+      keyword: "example keyword",
+      locationCode: 2826,
+      languageCode: "en",
+    });
+
+    expect(result.data.aiOverviewStatus).toBe("yes");
+    expect(result.data.costUsd).toBe(0.0006);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = JSON.stringify(
+      parseDataforseoRequestBody(fetchMock.mock.calls[0]?.[1]),
+    );
+    expect(request).not.toContain("load_async_ai_overview");
+  });
+
+  it("reports no overview for a populated SERP without the feature", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          status_code: 20000,
+          tasks: [
+            {
+              status_code: 20000,
+              cost: 0.0006,
+              path: ["v3", "serp", "google", "organic", "live", "advanced"],
+              result: [
+                {
+                  item_types: ["organic"],
+                  items: [{ type: "organic", title: "Result" }],
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(
+      fetchLiveSerpWithCost({
+        keyword: "example keyword",
+        locationCode: 2826,
+        languageCode: "en",
+      }),
+    ).resolves.toMatchObject({ data: { aiOverviewStatus: "no" } });
+  });
+
+  it("leaves the status unknown when the response omits feature metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          status_code: 20000,
+          tasks: [
+            {
+              status_code: 20000,
+              cost: 0.0006,
+              path: ["v3", "serp", "google", "organic", "live", "advanced"],
+              result: [{ items: [{ type: "organic", title: "Result" }] }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(
+      fetchLiveSerpWithCost({
+        keyword: "example keyword",
+        locationCode: 2826,
+        languageCode: "en",
+      }),
+    ).resolves.toMatchObject({ data: { aiOverviewStatus: null } });
+  });
+
   // 40102 is the documented "No Search Results." code (40501 is "Invalid
   // Field."). isNoResultsTask matches on the status message, not the code, so
   // this stays correct whichever code DataForSEO attaches to the message.
@@ -54,6 +157,38 @@ describe("live SERP", () => {
     ).resolves.toMatchObject({
       data: [],
       billing: { costUsd: 0.002 },
+    });
+  });
+});
+
+describe("queued SEO SERP result", () => {
+  it("reads AI Overview status from task result metadata", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          status_code: 20000,
+          tasks: [
+            {
+              id: "task-a",
+              status_code: 20000,
+              cost: 0,
+              path: ["v3", "serp", "google", "organic", "task_get", "advanced"],
+              result: [
+                {
+                  item_types: ["ai_overview", "organic"],
+                  items: [{ type: "organic", title: "Result" }],
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(fetchSeoSerpTaskResult("task-a")).resolves.toMatchObject({
+      status: "completed",
+      aiOverviewStatus: "yes",
     });
   });
 });

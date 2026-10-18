@@ -288,9 +288,24 @@ async function listSuggestions(projectId: string) {
     }
     if (row.seed) item.seeds.add(row.seed);
   }
+  const snapshots = await db
+    .select({
+      keywordId: seoSerpSnapshots.keywordId,
+      aiOverviewStatus: seoSerpSnapshots.aiOverviewStatus,
+    })
+    .from(seoSerpSnapshots)
+    .innerJoin(seoKeywords, eq(seoKeywords.id, seoSerpSnapshots.keywordId))
+    .where(eq(seoKeywords.projectId, projectId))
+    .orderBy(desc(seoSerpSnapshots.capturedAt), desc(seoSerpSnapshots.id));
+  const aiOverviewByKeyword = new Map<string, string | null>();
+  for (const snapshot of snapshots) {
+    if (!aiOverviewByKeyword.has(snapshot.keywordId))
+      aiOverviewByKeyword.set(snapshot.keywordId, snapshot.aiOverviewStatus);
+  }
   return [...grouped.values()].map(({ seeds, ...item }) => ({
     ...item,
     seeds: [...seeds],
+    aiOverviewStatus: aiOverviewByKeyword.get(item.id) ?? null,
   }));
 }
 
@@ -446,6 +461,7 @@ async function saveSerpSnapshot(input: {
   languageCode: string;
   mode: string;
   providerTaskId?: string;
+  aiOverviewStatus: "yes" | "no" | null;
   results: Array<{
     rank: number;
     title: string;
@@ -464,6 +480,7 @@ async function saveSerpSnapshot(input: {
     languageCode: input.languageCode,
     mode: input.mode,
     status: validResultCount === 10 ? "complete" : "incomplete",
+    aiOverviewStatus: input.aiOverviewStatus,
     resultCount: validResultCount,
     providerTaskId: input.providerTaskId,
   });
@@ -516,6 +533,7 @@ async function listLatestSerpsForProject(projectId: string) {
       snapshotId: seoSerpSnapshots.id,
       status: seoSerpSnapshots.status,
       resultCount: seoSerpSnapshots.resultCount,
+      aiOverviewStatus: seoSerpSnapshots.aiOverviewStatus,
       capturedAt: seoSerpSnapshots.capturedAt,
     })
     .from(seoSerpSnapshots)

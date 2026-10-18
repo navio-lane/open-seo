@@ -239,6 +239,13 @@
       "when": 1792108800001,
       "tag": "0033_seo_intelligence",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792387200001,
+      "tag": "0034_seo_ai_overview",
+      "breakpoints": true
     }
   ]
 }

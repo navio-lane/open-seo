@@ -85,6 +85,31 @@ const serpSnapshotItemSchema = z
   .passthrough();
 
 export type SerpLiveItem = z.infer<typeof serpSnapshotItemSchema>;
+export type AiOverviewStatus = "yes" | "no" | null;
+
+function responseItemTypes(task: DataforseoTaskLike): string[] | null {
+  const first = task.result?.[0];
+  if (!first || typeof first !== "object" || !("item_types" in first))
+    return null;
+  const itemTypes = first.item_types;
+  return Array.isArray(itemTypes) &&
+    itemTypes.every((item) => typeof item === "string")
+    ? itemTypes
+    : null;
+}
+
+function detectAiOverview(
+  items: SerpLiveItem[],
+  itemTypes: string[] | null,
+): AiOverviewStatus {
+  if (
+    items.some((item) => item.type === "ai_overview") ||
+    itemTypes?.includes("ai_overview")
+  ) {
+    return "yes";
+  }
+  return itemTypes ? "no" : null;
+}
 
 const autocompleteItemSchema = z
   .object({
@@ -144,6 +169,17 @@ export async function fetchLiveSerp(input: {
   /** Canonical DataForSEO name of a city, county, or region for a local SERP. */
   locationName?: string;
 }): Promise<DataforseoApiResponse<SerpLiveItem[]>> {
+  const response = await fetchLiveSerpResponse(input);
+  return { data: response.items, billing: response.billing };
+}
+
+async function fetchLiveSerpResponse(input: {
+  keyword: string;
+  locationCode: number;
+  languageCode: string;
+  depth?: number;
+  locationName?: string;
+}) {
   const locationParams = input.locationName
     ? { location_name: input.locationName }
     : { location_code: input.locationCode };
@@ -163,12 +199,14 @@ export async function fetchLiveSerp(input: {
   // DataForSEO uses a task error for a valid empty SERP. Keep the charged
   // response in the normal billing path and return an empty item list.
   const task = assertOk(response, { treatNoResultsAsEmpty: true });
+  const items = parseTaskItems(
+    "google-organic-live-advanced",
+    task,
+    serpSnapshotItemSchema,
+  );
   return {
-    data: parseTaskItems(
-      "google-organic-live-advanced",
-      task,
-      serpSnapshotItemSchema,
-    ),
+    items,
+    aiOverviewStatus: detectAiOverview(items, responseItemTypes(task)),
     billing: buildTaskBilling(task),
   };
 }
@@ -176,9 +214,13 @@ export async function fetchLiveSerp(input: {
 export async function fetchLiveSerpWithCost(
   input: Parameters<typeof fetchLiveSerp>[0],
 ) {
-  const response = await fetchLiveSerp(input);
+  const response = await fetchLiveSerpResponse(input);
   return {
-    data: { items: response.data, costUsd: response.billing.costUsd },
+    data: {
+      items: response.items,
+      aiOverviewStatus: response.aiOverviewStatus,
+      costUsd: response.billing.costUsd,
+    },
     billing: response.billing,
   };
 }
@@ -224,7 +266,12 @@ export async function postSeoSerpTask(input: {
 export type SeoSerpTaskOutcome =
   | { status: "pending" }
   | { status: "failed"; message: string; costUsd: number }
-  | { status: "completed"; items: SerpLiveItem[]; costUsd: number };
+  | {
+      status: "completed";
+      items: SerpLiveItem[];
+      aiOverviewStatus: AiOverviewStatus;
+      costUsd: number;
+    };
 
 export async function fetchSeoSerpTaskResult(
   taskId: string,
@@ -243,7 +290,12 @@ export async function fetchSeoSerpTaskResult(
   const costUsd = task.cost ?? 0;
   if (task.status_code !== 20000) {
     if (isNoResultsTask(task))
-      return { status: "completed", items: [], costUsd };
+      return {
+        status: "completed",
+        items: [],
+        aiOverviewStatus: null,
+        costUsd,
+      };
     return {
       status: "failed",
       message:
@@ -251,13 +303,15 @@ export async function fetchSeoSerpTaskResult(
       costUsd,
     };
   }
+  const items = parseTaskItems(
+    "google-organic-task-get-advanced",
+    task,
+    serpSnapshotItemSchema,
+  );
   return {
     status: "completed",
-    items: parseTaskItems(
-      "google-organic-task-get-advanced",
-      task,
-      serpSnapshotItemSchema,
-    ),
+    items,
+    aiOverviewStatus: detectAiOverview(items, responseItemTypes(task)),
     costUsd,
   };
 }

@@ -21,7 +21,9 @@ export const seoSeeds = pgTable(
     normalizedSeed: text("normalized_seed").notNull(),
     locationCode: integer("location_code").notNull().default(2826),
     languageCode: text("language_code").notNull().default("en"),
-    createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
   },
   (table) => [
     uniqueIndex("seo_seeds_unique_project_seed_market_idx").on(
@@ -45,7 +47,9 @@ export const seoKeywords = pgTable(
     normalizedKeyword: text("normalized_keyword").notNull(),
     locationCode: integer("location_code").notNull().default(2826),
     languageCode: text("language_code").notNull().default("en"),
-    createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
   },
   (table) => [
     uniqueIndex("seo_keywords_unique_project_keyword_market_idx").on(
@@ -70,7 +74,9 @@ export const seoKeywordSources = pgTable(
     seedId: text("seed_id")
       .notNull()
       .references(() => seoSeeds.id, { onDelete: "cascade" }),
-    createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
   },
   (table) => [
     uniqueIndex("seo_keyword_sources_unique_idx").on(
@@ -93,9 +99,12 @@ export const seoSerpSnapshots = pgTable(
     device: text("device").notNull().default("desktop"),
     mode: text("mode").notNull(),
     status: text("status").notNull(),
+    aiOverviewStatus: text("ai_overview_status"),
     resultCount: integer("result_count").notNull().default(0),
     providerTaskId: text("provider_task_id"),
-    capturedAt: text("captured_at").notNull().default(sql`(current_timestamp)`),
+    capturedAt: text("captured_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
   },
   (table) => [
     index("seo_serp_snapshots_keyword_captured_idx").on(
@@ -135,24 +144,18 @@ export const seoMatchPresets = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     titleIgnoredWords: text("title_ignored_words").notNull().default("[]"),
-    urlIgnoredWords: text("url_ignored_words").notNull().default('["a","an","the","and"]'),
-    preserveOrder: boolean("preserve_order")
+    urlIgnoredWords: text("url_ignored_words")
       .notNull()
-      .default(false),
-    adjacentPhrase: boolean("adjacent_phrase")
-      .notNull()
-      .default(false),
-    urlPathOnly: boolean("url_path_only")
-      .notNull()
-      .default(true),
-    ampersandEqualsAnd: boolean("ampersand_equals_and")
-      .notNull()
-      .default(true),
+      .default('["a","an","the","and"]'),
+    preserveOrder: boolean("preserve_order").notNull().default(false),
+    adjacentPhrase: boolean("adjacent_phrase").notNull().default(false),
+    urlPathOnly: boolean("url_path_only").notNull().default(true),
+    ampersandEqualsAnd: boolean("ampersand_equals_and").notNull().default(true),
     version: integer("version").notNull().default(1),
-    isDefault: boolean("is_default")
+    isDefault: boolean("is_default").notNull().default(false),
+    createdAt: text("created_at")
       .notNull()
-      .default(false),
-    createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+      .default(sql`(current_timestamp)`),
   },
   (table) => [
     uniqueIndex("seo_match_presets_unique_project_name_idx").on(
@@ -180,7 +183,9 @@ export const seoOpportunityAssessments = pgTable(
     urlOnlyCount: integer("url_only_count").notNull().default(0),
     neitherCount: integer("neither_count").notNull().default(0),
     estimatedCostUsd: real("estimated_cost_usd"),
-    createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
   },
   (table) => [
     index("seo_opportunity_assessments_snapshot_idx").on(table.snapshotId),
@@ -211,7 +216,9 @@ export const seoApiJobs = pgTable(
     error: text("error"),
     approvedAt: text("approved_at"),
     completedAt: text("completed_at"),
-    createdAt: text("created_at").notNull().default(sql`(current_timestamp)`),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
   },
   (table) => [
     index("seo_api_jobs_project_created_idx").on(

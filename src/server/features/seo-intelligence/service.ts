@@ -303,6 +303,7 @@ async function collectSerp(
         keyword,
         ...request,
         mode: job.mode,
+        aiOverviewStatus: live.aiOverviewStatus,
         results: organic,
       });
       await repository.updateJob(input.jobId, {
@@ -405,6 +406,7 @@ async function pollSerp(
     ...request,
     mode: job.mode,
     providerTaskId: taskId,
+    aiOverviewStatus: outcome.aiOverviewStatus,
     results,
   });
   await repository.updateJob(input.jobId, {
@@ -582,6 +584,7 @@ async function getProjectOpportunityExport(input: {
         presetName: preset.name,
         serpStatus: snapshot.status,
         resultCount: validResults.length,
+        aiOverviewStatus: snapshot.aiOverviewStatus,
         bothCount: classifications.filter((value) => value === "both").length,
         capturedAt: snapshot.capturedAt,
       },

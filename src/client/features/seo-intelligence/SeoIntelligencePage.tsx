@@ -58,9 +58,10 @@ function marketLabel(locationCode: number, languageCode: string) {
   const language = getLanguageOptions(locationCode).find(
     (item) => item.code === languageCode,
   );
-  return [language?.label ?? languageCode, location?.label ?? locationCode].join(
-    " · ",
-  );
+  return [
+    language?.label ?? languageCode,
+    location?.label ?? locationCode,
+  ].join(" · ");
 }
 
 function formatDateTime(value: string) {
@@ -71,6 +72,10 @@ function formatDateTime(value: string) {
         dateStyle: "medium",
         timeStyle: "short",
       });
+}
+
+function aiOverviewLabel(status: string | null | undefined) {
+  return status === "yes" ? "Yes" : status === "no" ? "No" : "Unknown";
 }
 
 function serpModeLabel(mode: "live" | "standard" | "priority") {
@@ -330,7 +335,9 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         });
       }
       if (!toCollect.length) {
-        toast.message("Showing saved Google results; no new API request was made.");
+        toast.message(
+          "Showing saved Google results; no new API request was made.",
+        );
       } else {
         const estimateUsd = prepared.reduce(
           (sum, item) => sum + item.estimateUsd,
@@ -439,9 +446,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           ? approval.jobs.map((job) => job.jobId)
           : [approval.jobId];
       await Promise.all(
-          ids.map((jobId) =>
-            cancelSeoPaidJob({ data: { projectId, jobId } }),
-          ),
+        ids.map((jobId) => cancelSeoPaidJob({ data: { projectId, jobId } })),
       );
       setApproval(null);
       await reloadApiJobs();
@@ -550,9 +555,17 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
   function exportKeywordsCsv() {
     const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const rows = [
-      ["Keyword", "Seed keywords", "Location code", "Language", "Saved at"],
+      [
+        "Keyword",
+        "AI Overview",
+        "Seed keywords",
+        "Location code",
+        "Language",
+        "Saved at",
+      ],
       ...suggestions.map((item) => [
         item.keyword,
+        aiOverviewLabel(item.aiOverviewStatus),
         item.seeds.join(" | "),
         String(item.locationCode),
         item.languageCode,
@@ -580,7 +593,9 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         },
       });
       if (opportunities.length === 0) {
-        toast.message("No article opportunities were found in saved Google results.");
+        toast.message(
+          "No article opportunities were found in saved Google results.",
+        );
         return;
       }
       const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
@@ -591,6 +606,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           "Opportunity status",
           "Matching preset",
           "Google results found",
+          "AI Overview",
           "Results coverage",
           "Matching results",
           "Location code",
@@ -605,6 +621,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             : "Potential article opportunity",
           item.presetName,
           String(item.resultCount),
+          aiOverviewLabel(item.aiOverviewStatus),
           item.serpStatus,
           String(item.bothCount),
           String(item.locationCode),
@@ -642,6 +659,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           report.status,
           report.preset.name,
           report.snapshot?.status ?? "",
+          aiOverviewLabel(report.snapshot?.aiOverviewStatus),
           String(item.rank),
           item.title,
           item.url,
@@ -653,6 +671,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             report.status,
             report.preset.name,
             report.snapshot?.status ?? "",
+            aiOverviewLabel(report.snapshot?.aiOverviewStatus),
             "",
             "",
             "",
@@ -665,6 +684,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         "Opportunity status",
         "Matching preset",
         "Results coverage",
+        "AI Overview",
         "Rank",
         "Title",
         "URL",
@@ -791,8 +811,8 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Export all keywords downloads the saved list. Export opportunities
-              downloads confirmed and potential opportunities from saved
-              results using the selected matching preset.
+              downloads confirmed and potential opportunities from saved results
+              using the selected matching preset.
             </p>
           </div>
           <Button
@@ -875,6 +895,12 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                     From: {item.seeds.join(", ")}
                   </div>
                 </div>
+                <span
+                  className="text-xs text-muted-foreground"
+                  aria-label="AI Overview"
+                >
+                  AI Overview: {aiOverviewLabel(item.aiOverviewStatus)}
+                </span>
                 <span className="text-xs text-muted-foreground">
                   {marketLabel(item.locationCode, item.languageCode)}
                 </span>
@@ -908,8 +934,8 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         </summary>
         <div className="mt-4 space-y-4">
           <p className="text-sm text-muted-foreground">
-            These rules classify saved Google results. Changing them never
-            makes a DataForSEO request.
+            These rules classify saved Google results. Changing them never makes
+            a DataForSEO request.
           </p>
           <div className="grid gap-3 md:grid-cols-3">
             <label className="grid gap-1 text-sm">
@@ -960,31 +986,33 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            {(["titleIgnoredWords", "urlIgnoredWords"] as const).map((field) => (
-              <label key={field} className="grid gap-1 text-sm">
-                <span>
-                  {field === "titleIgnoredWords"
-                    ? "Words to ignore in titles"
-                    : "Words to ignore in URLs"}{" "}
-                  (comma separated)
-                </span>
-                <Input
-                  className="bg-[#ededed]"
-                  value={ignoredWordsDraft[field]}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setIgnoredWordsDraft((current) => ({
-                      ...current,
-                      [field]: value,
-                    }));
-                    setRules((current) => ({
-                      ...current,
-                      [field]: parseIgnoredWords(value),
-                    }));
-                  }}
-                />
-              </label>
-            ))}
+            {(["titleIgnoredWords", "urlIgnoredWords"] as const).map(
+              (field) => (
+                <label key={field} className="grid gap-1 text-sm">
+                  <span>
+                    {field === "titleIgnoredWords"
+                      ? "Words to ignore in titles"
+                      : "Words to ignore in URLs"}{" "}
+                    (comma separated)
+                  </span>
+                  <Input
+                    className="bg-[#ededed]"
+                    value={ignoredWordsDraft[field]}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setIgnoredWordsDraft((current) => ({
+                        ...current,
+                        [field]: value,
+                      }));
+                      setRules((current) => ({
+                        ...current,
+                        [field]: parseIgnoredWords(value),
+                      }));
+                    }}
+                  />
+                </label>
+              ),
+            )}
           </div>
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
             <label className="flex items-center gap-2">
@@ -1100,6 +1128,8 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
               {activeSerp.snapshot?.status === "incomplete"
                 ? " · fewer than 10 were returned"
                 : ""}
+              {" · AI Overview: "}
+              {aiOverviewLabel(activeSerp.snapshot?.aiOverviewStatus)}
             </p>
             <Button
               variant="outline"
