@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { CircleCheck, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/client/components/PageHeader";
 import { Button } from "@/client/components/ui/button";
@@ -62,6 +63,16 @@ function marketLabel(locationCode: number, languageCode: string) {
   );
 }
 
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+}
+
 function serpModeLabel(mode: "live" | "standard" | "priority") {
   return mode === "live"
     ? "Live mode"
@@ -97,9 +108,10 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
   const [approval, setApproval] = useState<Approval | null>(null);
   const [activeSerp, setActiveSerp] = useState<SavedSerp | null>(null);
   const [serpMode, setSerpMode] = useState<"live" | "standard" | "priority">(
-    "live",
+    "standard",
   );
   const [pendingJobIds, setPendingJobIds] = useState<string[]>([]);
+  const [serpCompletedAt, setSerpCompletedAt] = useState<number | null>(null);
   const [apiJobs, setApiJobs] = useState<ApiJob[]>([]);
   const [presets, setPresets] = useState<MatchPreset[]>([]);
   const [presetId, setPresetId] = useState("");
@@ -118,6 +130,21 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
   });
   const [report, setReport] = useState<OpportunityReport | null>(null);
   const [loading, setLoading] = useState(false);
+  const isGoogleResultsWorking =
+    pendingJobIds.length > 0 || (loading && approval?.type === "serp");
+  const activeSerpTaskCount = Math.max(
+    pendingJobIds.length,
+    approval?.type === "serp" && loading ? approval.jobs.length : 0,
+  );
+
+  useEffect(() => {
+    if (serpCompletedAt === null) return;
+    const timeout = window.setTimeout(
+      () => setSerpCompletedAt(null),
+      Math.max(0, serpCompletedAt + 3000 - Date.now()),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [serpCompletedAt]);
 
   const reloadSuggestions = useCallback(async () => {
     const rows = await listSeoSuggestions({ data: { projectId } });
@@ -184,19 +211,24 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
     let pollDelay = 15_000;
     const poll = async () => {
       const finished: string[] = [];
+      let completedSuccessfully = false;
+      let failed = false;
       for (const jobId of pendingJobIds) {
         try {
           const outcome = await pollSeoSerp({ data: { projectId, jobId } });
           if (outcome.pending) continue;
           finished.push(jobId);
-          if ("error" in outcome)
+          if ("error" in outcome) {
+            failed = true;
             toast.error(`Queued Google results failed: ${outcome.error}`);
-          else
+          } else {
+            completedSuccessfully = true;
             setActiveSerp(
               await getSavedSeoSerp({
                 data: { projectId, keywordId: outcome.keyword.id },
               }),
             );
+          }
         } catch (error) {
           toast.error(
             error instanceof Error
@@ -210,6 +242,13 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         setPendingJobIds((current) =>
           current.filter((id) => !finished.includes(id)),
         );
+      if (
+        pendingJobIds.every((id) => finished.includes(id)) &&
+        completedSuccessfully &&
+        !failed
+      ) {
+        setSerpCompletedAt(Date.now());
+      }
       if (finished.length) void reloadApiJobs();
       timeout = setTimeout(() => {
         pollDelay = Math.min(pollDelay * 1.5, 60_000);
@@ -361,6 +400,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           setPendingJobIds((current) => [
             ...new Set([...current, ...queuedJobIds]),
           ]);
+        else if (saved > 0) setSerpCompletedAt(Date.now());
         toast.message(
           queuedJobIds.length
             ? `${queuedJobIds.length} ${serpModeLabel(approval.mode)} task(s) submitted; ${saved} saved immediately.`
@@ -524,7 +564,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
     link.href = URL.createObjectURL(
       new Blob([csv], { type: "text/csv;charset=utf-8" }),
     );
-    link.download = "seo-keywords.csv";
+    link.download = "autocomplete-suggestions.csv";
     link.click();
     URL.revokeObjectURL(link.href);
   }
@@ -647,6 +687,30 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      {isGoogleResultsWorking ? (
+        <div
+          className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm shadow-lg"
+          role="status"
+          aria-live="polite"
+        >
+          <LoaderCircle
+            className="size-4 animate-spin text-orange-500"
+            aria-hidden
+          />
+          {activeSerpTaskCount === 1
+            ? "Google results in progress"
+            : `${activeSerpTaskCount} Google results tasks in progress`}
+        </div>
+      ) : serpCompletedAt !== null ? (
+        <div
+          className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm shadow-lg"
+          role="status"
+          aria-live="polite"
+        >
+          <CircleCheck className="size-4 text-green-600" aria-hidden />
+          Google results complete
+        </div>
+      ) : null}
       <PageHeader
         title="SEO Intelligence"
         description="Collect Google suggestions and review the first ten organic results for each keyword."
@@ -768,13 +832,13 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                 setSerpMode(event.target.value as typeof serpMode)
               }
             >
-              <option value="live">Live (fastest response)</option>
               <option value="standard">
                 Standard queue (lower cost, usually minutes)
               </option>
               <option value="priority">
                 Priority queue (faster queue, higher cost)
               </option>
+              <option value="live">Live (fastest response)</option>
             </select>
           </label>
         </div>
@@ -831,7 +895,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         )}
       </section>
 
-      <details className="rounded-lg border p-4">
+      <details className="rounded-lg border p-4" open>
         <summary className="cursor-pointer font-semibold">
           Matching rules and presets
         </summary>
@@ -978,6 +1042,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
               <thead>
                 <tr className="border-b text-muted-foreground">
                   <th className="p-2">Task</th>
+                  <th className="p-2">Date and time</th>
                   <th className="p-2">Mode</th>
                   <th className="p-2">Requests</th>
                   <th className="p-2">Estimate</th>
@@ -989,6 +1054,9 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                 {apiJobs.map((job) => (
                   <tr key={job.id}>
                     <td className="p-2">{job.endpoint}</td>
+                    <td className="whitespace-nowrap p-2">
+                      {formatDateTime(job.createdAt)}
+                    </td>
                     <td className="p-2">{job.mode}</td>
                     <td className="p-2">{job.requestCount}</td>
                     <td className="p-2">{money(job.estimateUsd)}</td>
