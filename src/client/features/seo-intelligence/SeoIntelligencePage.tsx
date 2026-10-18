@@ -52,6 +52,16 @@ function money(value: number) {
   return `$${value.toFixed(4)}`;
 }
 
+function marketLabel(locationCode: number, languageCode: string) {
+  const location = LOCATION_OPTIONS.find((item) => item.code === locationCode);
+  const language = getLanguageOptions(locationCode).find(
+    (item) => item.code === languageCode,
+  );
+  return [language?.label ?? languageCode, location?.label ?? locationCode].join(
+    " · ",
+  );
+}
+
 function serpModeLabel(mode: "live" | "standard" | "priority") {
   return mode === "live"
     ? "Live mode"
@@ -180,7 +190,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           if (outcome.pending) continue;
           finished.push(jobId);
           if ("error" in outcome)
-            toast.error(`Queued SERP failed: ${outcome.error}`);
+            toast.error(`Queued Google results failed: ${outcome.error}`);
           else
             setActiveSerp(
               await getSavedSeoSerp({
@@ -191,7 +201,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           toast.error(
             error instanceof Error
               ? error.message
-              : "Could not check queued SERP status.",
+              : "Could not check queued Google results status.",
           );
         }
       }
@@ -281,7 +291,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         });
       }
       if (!toCollect.length) {
-        toast.message("Showing saved SERP data; no new API request was made.");
+        toast.message("Showing saved Google results; no new API request was made.");
       } else {
         const estimateUsd = prepared.reduce(
           (sum, item) => sum + item.estimateUsd,
@@ -304,7 +314,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
       toast.error(
         error instanceof Error
           ? error.message
-          : "Could not prepare SERP analysis.",
+          : "Could not prepare Google results.",
       );
     } finally {
       setLoading(false);
@@ -354,7 +364,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         toast.message(
           queuedJobIds.length
             ? `${queuedJobIds.length} ${serpModeLabel(approval.mode)} task(s) submitted; ${saved} saved immediately.`
-            : `${saved} SERP result(s) saved.`,
+            : `${saved} Google result set(s) saved.`,
         );
         await reloadApiJobs();
       }
@@ -442,7 +452,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         }
       }
       toast.success(
-        "Matching preset saved. Existing SERPs can be rechecked without a provider request.",
+        "Matching preset saved. Existing Google results can be rechecked without a provider request.",
       );
     } catch (error) {
       toast.error(
@@ -530,7 +540,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         },
       });
       if (opportunities.length === 0) {
-        toast.message("No article opportunities were found in saved SERPs.");
+        toast.message("No article opportunities were found in saved Google results.");
         return;
       }
       const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
@@ -540,12 +550,12 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           "Seed keywords",
           "Opportunity status",
           "Matching preset",
-          "SERP results",
-          "SERP status",
+          "Google results found",
+          "Results coverage",
           "Matching results",
           "Location code",
           "Language",
-          "SERP captured at",
+          "Results captured at",
         ],
         ...opportunities.map((item) => [
           item.keyword,
@@ -614,7 +624,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         "Keyword",
         "Opportunity status",
         "Matching preset",
-        "SERP status",
+        "Results coverage",
         "Rank",
         "Title",
         "URL",
@@ -639,7 +649,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
     <div className="space-y-6">
       <PageHeader
         title="SEO Intelligence"
-        description="Collect Google suggestions and inspect the first ten organic results for configurable markets."
+        description="Collect Google suggestions and review the first ten organic results for each keyword."
       />
 
       <section className="rounded-lg border p-4">
@@ -701,138 +711,6 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         </form>
       </section>
 
-      <section className="space-y-4 rounded-lg border p-4">
-        <div>
-          <h2 className="text-lg font-semibold">Matching rules</h2>
-          <p className="text-sm text-muted-foreground">
-            Rules are applied to saved SERPs; changing them never makes a
-            DataForSEO request.
-          </p>
-        </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          <label className="grid gap-1 text-sm">
-            <span>Saved preset</span>
-            <select
-              className="h-9 rounded-md border bg-background px-3"
-              value={presetId}
-              onChange={(event) => {
-                const preset = presets.find(
-                  (item) => item.id === event.target.value,
-                );
-                if (preset) selectPreset(preset);
-              }}
-            >
-              {presets.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name}
-                  {preset.isDefault ? " (default)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm">
-            <span>Preset name</span>
-            <Input
-              value={presetName}
-              onChange={(event) => setPresetName(event.target.value)}
-              maxLength={80}
-            />
-          </label>
-          <div className="flex items-end gap-2">
-            <Button
-              variant="outline"
-              disabled={!presetId}
-              onClick={() => void savePreset(presetId)}
-            >
-              Save changes
-            </Button>
-            <Button variant="outline" onClick={() => void savePreset()}>
-              Save as new
-            </Button>
-          </div>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          {(["titleIgnoredWords", "urlIgnoredWords"] as const).map((field) => (
-            <label key={field} className="grid gap-1 text-sm">
-              <span>
-                {field === "titleIgnoredWords"
-                  ? "Words to ignore in titles"
-                  : "Words to ignore in URLs"}{" "}
-                (comma separated)
-              </span>
-              <Input
-                value={ignoredWordsDraft[field]}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setIgnoredWordsDraft((current) => ({
-                    ...current,
-                    [field]: value,
-                  }));
-                  setRules((current) => ({
-                    ...current,
-                    [field]: parseIgnoredWords(value),
-                  }));
-                }}
-              />
-            </label>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={rules.preserveOrder}
-              onChange={(event) =>
-                setRules((current) => ({
-                  ...current,
-                  preserveOrder: event.target.checked,
-                }))
-              }
-            />
-            Keep word order
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={rules.adjacentPhrase}
-              onChange={(event) =>
-                setRules((current) => ({
-                  ...current,
-                  adjacentPhrase: event.target.checked,
-                }))
-              }
-            />
-            Require adjacent phrase
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={rules.urlPathOnly}
-              onChange={(event) =>
-                setRules((current) => ({
-                  ...current,
-                  urlPathOnly: event.target.checked,
-                }))
-              }
-            />
-            Match URL path only
-          </label>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={rules.ampersandEqualsAnd}
-              onChange={(event) =>
-                setRules((current) => ({
-                  ...current,
-                  ampersandEqualsAnd: event.target.checked,
-                }))
-              }
-            />
-            Treat “and” as equivalent to &amp;
-          </label>
-        </div>
-      </section>
-
       <section className="rounded-lg border">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
           <div>
@@ -841,13 +719,23 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
               {suggestions.length} unique keyword
               {suggestions.length === 1 ? "" : "s"} saved in this project.
             </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Get / view Google results fetches them if none are saved; you will
+              approve any paid request first. Assess opportunity uses saved
+              results only and makes no provider request.
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Export all keywords downloads the saved list. Export opportunities
+              downloads confirmed and potential opportunities from saved
+              results using the selected matching preset.
+            </p>
           </div>
           <Button
             variant="outline"
             disabled={selected.length === 0 || loading}
             onClick={() => void prepareSerp(selected)}
           >
-            Analyze selected (
+            Get Google results for selected (
             {serpMode === "live"
               ? "Live"
               : serpMode === "standard"
@@ -860,7 +748,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
             disabled={suggestions.length === 0}
             onClick={exportKeywordsCsv}
           >
-            Export CSV
+            Export all keywords
           </Button>
           <Button
             variant="outline"
@@ -872,7 +760,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         </div>
         <div className="px-4 pb-4">
           <label className="grid max-w-sm gap-1 text-sm">
-            <span>SERP collection mode</span>
+            <span>How to fetch Google results</span>
             <select
               className="h-9 rounded-md border bg-background px-3"
               value={serpMode}
@@ -880,7 +768,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                 setSerpMode(event.target.value as typeof serpMode)
               }
             >
-              <option value="live">Live mode (fastest response)</option>
+              <option value="live">Live (fastest response)</option>
               <option value="standard">
                 Standard queue (lower cost, usually minutes)
               </option>
@@ -920,7 +808,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                   </div>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {item.languageCode} · {item.locationCode}
+                  {marketLabel(item.locationCode, item.languageCode)}
                 </span>
                 <Button
                   variant="outline"
@@ -928,20 +816,154 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                   disabled={loading}
                   onClick={() => void prepareSerp(item.id)}
                 >
-                  Analyze SERP
+                  Get / view Google results
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => void checkOpportunity(item.id)}
                 >
-                  Check opportunity
+                  Assess opportunity
                 </Button>
               </div>
             ))}
           </div>
         )}
       </section>
+
+      <details className="rounded-lg border p-4">
+        <summary className="cursor-pointer font-semibold">
+          Matching rules and presets
+        </summary>
+        <div className="mt-4 space-y-4">
+          <p className="text-sm text-muted-foreground">
+            These rules classify saved Google results. Changing them never
+            makes a DataForSEO request.
+          </p>
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="grid gap-1 text-sm">
+              <span>Saved preset</span>
+              <select
+                className="h-9 rounded-md border bg-background px-3"
+                value={presetId}
+                onChange={(event) => {
+                  const preset = presets.find(
+                    (item) => item.id === event.target.value,
+                  );
+                  if (preset) selectPreset(preset);
+                }}
+              >
+                {presets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                    {preset.isDefault ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span>Preset name</span>
+              <Input
+                value={presetName}
+                onChange={(event) => setPresetName(event.target.value)}
+                maxLength={80}
+              />
+            </label>
+            <div className="flex items-end gap-2">
+              <Button
+                variant="outline"
+                disabled={!presetId}
+                onClick={() => void savePreset(presetId)}
+              >
+                Save changes
+              </Button>
+              <Button variant="outline" onClick={() => void savePreset()}>
+                Save as new
+              </Button>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {(["titleIgnoredWords", "urlIgnoredWords"] as const).map((field) => (
+              <label key={field} className="grid gap-1 text-sm">
+                <span>
+                  {field === "titleIgnoredWords"
+                    ? "Words to ignore in titles"
+                    : "Words to ignore in URLs"}{" "}
+                  (comma separated)
+                </span>
+                <Input
+                  value={ignoredWordsDraft[field]}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setIgnoredWordsDraft((current) => ({
+                      ...current,
+                      [field]: value,
+                    }));
+                    setRules((current) => ({
+                      ...current,
+                      [field]: parseIgnoredWords(value),
+                    }));
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={rules.preserveOrder}
+                onChange={(event) =>
+                  setRules((current) => ({
+                    ...current,
+                    preserveOrder: event.target.checked,
+                  }))
+                }
+              />
+              Keep word order
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={rules.adjacentPhrase}
+                onChange={(event) =>
+                  setRules((current) => ({
+                    ...current,
+                    adjacentPhrase: event.target.checked,
+                  }))
+                }
+              />
+              Require adjacent phrase
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={rules.urlPathOnly}
+                onChange={(event) =>
+                  setRules((current) => ({
+                    ...current,
+                    urlPathOnly: event.target.checked,
+                  }))
+                }
+              />
+              Match URL path only
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={rules.ampersandEqualsAnd}
+                onChange={(event) =>
+                  setRules((current) => ({
+                    ...current,
+                    ampersandEqualsAnd: event.target.checked,
+                  }))
+                }
+              />
+              Treat “and” as equivalent to &amp;
+            </label>
+          </div>
+        </div>
+      </details>
 
       {apiJobs.length ? (
         <section className="space-y-3 rounded-lg border p-4">
@@ -986,13 +1008,16 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
         <section className="rounded-lg border">
           <div className="border-b p-4">
             <h2 className="text-lg font-semibold">
-              Top organic results for “{activeSerp.keyword.keyword}”
+              Google organic results for “{activeSerp.keyword.keyword}”
             </h2>
             <p className="text-sm text-muted-foreground">
               {activeSerp.snapshot?.resultCount ??
                 activeSerp.snapshot?.results.length ??
                 0}{" "}
-              valid organic results · {activeSerp.snapshot?.status ?? "saved"}
+              organic results found
+              {activeSerp.snapshot?.status === "incomplete"
+                ? " · fewer than 10 were returned"
+                : ""}
             </p>
             <Button
               className="mt-2"
@@ -1001,7 +1026,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
               disabled={loading}
               onClick={() => void prepareSerp(activeSerp.keyword.id, true)}
             >
-              Refresh SERP
+              Refresh Google results
             </Button>
           </div>
           {activeSerp.snapshot?.results.length ? (
@@ -1039,7 +1064,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <h2 className="text-lg font-semibold">
-                Opportunity assessment: “{report.keyword.keyword}”
+                Opportunity check: “{report.keyword.keyword}”
               </h2>
               <p className="text-sm text-muted-foreground">
                 Preset: {report.preset.name} ·{" "}
@@ -1048,8 +1073,8 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
                   : report.status === "not_candidate"
                     ? "Article opportunity: no"
                     : report.status === "potential_candidate"
-                      ? `Potential article opportunity: yes (${report.snapshot?.resultCount ?? 0}/10 organic results; SERP incomplete)`
-                      : "No saved SERP yet"}
+                      ? `Potential article opportunity: yes (${report.snapshot?.resultCount ?? 0}/10 organic results; results may be incomplete)`
+                      : "No saved Google results yet"}
               </p>
               {report.snapshot ? (
                 <p className="text-xs text-muted-foreground">
@@ -1118,7 +1143,7 @@ export function SeoIntelligencePage({ projectId }: { projectId: string }) {
               <p className="mt-1 text-sm text-muted-foreground">
                 {approval.type === "autocomplete"
                   ? `Google Autocomplete suggestions for “${approval.seed}”`
-                  : `${approval.jobs.length} Google Organic SERP(s) in ${serpModeLabel(approval.mode)}`}
+                  : `${approval.jobs.length} Google result set(s) in ${serpModeLabel(approval.mode)}`}
               </p>
             </div>
             <dl className="grid grid-cols-2 gap-2 rounded-md bg-muted p-3 text-sm">
